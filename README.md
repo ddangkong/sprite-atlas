@@ -60,21 +60,34 @@ defaults — rename in the UI tabs if you like). Frames are PNGs named `f1..fN`.
 Two AI features light up **only if you have them set up** — otherwise their
 buttons stay disabled and the rest of the tool works fine.
 
-- **🪄 Flux masked inpaint** (paint a region → AI redraws just that area).
-  Needs a local [ComfyUI](https://github.com/comfyanonymous/ComfyUI) running and
-  the Flux models referenced by `ai/workflows/flux_kontext_consistency.json`
-  (e.g. a Flux Kontext / Fill checkpoint). Point the server at it:
-  ```bash
-  COMFY_URL=http://127.0.0.1:8188 python server.py
-  ```
-- **누끼 / matte** (one-click background removal) via
-  [InSPyReNet](https://github.com/plemeri/transparent-background):
-  ```bash
-  pip install transparent-background
-  ```
+- **🪄 Flux masked inpaint** — paint a region → AI redraws just that area.
+- **누끼 / matte** — one-click background removal ([InSPyReNet](https://github.com/plemeri/transparent-background)).
 
-Models are **not** bundled (multi-GB, separately licensed). The AI code lives in
-`ai/` and talks to ComfyUI over HTTP — see `ai/flux_edit.py` and `ai/matte_tool.py`.
+### One-command bootstrap
+
+A script sets these up for you — it installs the matte package, clones
+[ComfyUI](https://github.com/comfyanonymous/ComfyUI) into `vendor/` (own venv),
+and downloads the four Flux Kontext models (~17 GB), then tells you how to launch
+both servers:
+
+```powershell
+.\setup.ps1 -All      # Windows  (or -Matte / -Comfy / -Models à la carte)
+```
+```bash
+./setup.sh --all      # macOS / Linux  (or --matte / --comfy / --models)
+```
+
+ComfyUI and the models are **not** bundled (multi-GB, separately licensed) — the
+script fetches them, and `vendor/` is git-ignored. Already have ComfyUI? Just
+`pip install transparent-background` for matte and point the atlas at your server:
+
+```bash
+COMFY_URL=http://127.0.0.1:8188 python server.py
+```
+
+Full model list, folder layout, GPU/CUDA notes, and troubleshooting are in
+**[SETUP_AI.md](SETUP_AI.md)**. The AI code lives in `ai/` and talks to ComfyUI
+over HTTP — see `ai/flux_edit.py` and `ai/matte_tool.py`.
 
 ## Project structure
 

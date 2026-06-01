@@ -7,3 +7,5 @@ venv/
 ai/input/
 ai/output/
 data/orig_backups/
+# bootstrapped by setup.ps1 / setup.sh (ComfyUI clone + multi-GB Flux models)
+vendor/
