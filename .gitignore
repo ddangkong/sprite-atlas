@@ -1,0 +1,9 @@
+__pycache__/
+*.py[cod]
+.DS_Store
+.venv/
+venv/
+# runtime temp / generated
+ai/input/
+ai/output/
+data/orig_backups/

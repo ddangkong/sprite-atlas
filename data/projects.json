@@ -1,0 +1,7 @@
+{
+  "active": "demo",
+  "projects": [
+    { "id": "demo", "name": "Demo", "base": "projects/demo/sprites" },
+    { "id": "shared", "name": "Shared Library", "base": "shared/sprites", "shared": true }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "pets": {
+    "flat": false,
+    "characters": {}
+  },
+  "monsters": {
+    "flat": false,
+    "characters": {}
+  },
+  "bosses": {
+    "flat": false,
+    "characters": {}
+  },
+  "baits": {
+    "flat": true,
+    "files": []
+  },
+  "locations": {
+    "flat": true,
+    "files": []
+  }
+}

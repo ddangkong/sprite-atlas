@@ -1,0 +1,2936 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>Sprite Atlas</title>
+<style>
+  :root {
+    /* Light/cream theme — unified with the cream modal (.tune-card) skin. */
+    --bg:#ece4d3; --card:#fdfbf6; --card2:#f3ecdd; --border:#e3d8c1;
+    --text:#2b2620; --muted:#8a7f6d; --dim:#b3a890;
+    --accent:#b8923f; --warn:#c0863a; --rare:#8b6fc9; --epic:#d97a3a;
+    --legendary:#d4a017; --green:#6f9a4f;
+    /* Sprite preview backdrop — user-selectable so edge-fade (a transparency
+       mask) can be checked against the real game bg (#fff) instead of always
+       looking "black" against the dark atlas chrome. */
+    --preview-bg:#ffffff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 24px;
+    min-height: 100vh;
+  }
+
+  /* ---------- Header ---------- */
+  .head-row { display: flex; align-items: baseline; gap: 14px; margin-bottom: 6px; }
+  h1 { margin: 0; font-size: 24px; font-weight: 600; letter-spacing: -0.01em; }
+  .badge {
+    color: var(--accent); font-size: 11px; letter-spacing: 1.5px;
+    border: 1px solid rgba(184, 146, 63, 0.35); padding: 2px 8px; border-radius: 999px;
+    font-family: 'JetBrains Mono', ui-monospace, monospace; text-transform: uppercase;
+  }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+
+  /* ---------- Top nav (categories) ---------- */
+  .nav {
+    display: flex; gap: 4px;
+    margin-bottom: 18px; padding: 6px;
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    position: sticky; top: 0; z-index: 20;
+    backdrop-filter: blur(12px);
+  }
+  .nav-tab {
+    background: transparent; color: var(--muted);
+    border: 0; padding: 9px 18px;
+    border-radius: 8px; font-size: 13px; cursor: pointer;
+    font-family: inherit; transition: all 140ms ease;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .nav-tab:hover { color: var(--text); background: var(--card2); }
+  .nav-tab.active { background: var(--accent); color: #2b2620; font-weight: 600; }
+  .nav-tab .count {
+    font-size: 10px; opacity: 0.7; font-family: 'JetBrains Mono', ui-monospace, monospace;
+  }
+  .nav-tab.active .count { opacity: 0.85; }
+
+  /* ---------- Sub-controls bar ---------- */
+  .subbar {
+    display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+    margin-bottom: 16px;
+  }
+  .pill {
+    background: var(--card); color: var(--muted);
+    border: 1px solid var(--border); padding: 6px 14px;
+    border-radius: 999px; font-size: 12px; cursor: pointer;
+    font-family: inherit; transition: all 140ms ease;
+  }
+  .pill:hover { background: var(--card2); color: var(--text); }
+  .pill.active { background: var(--accent); color: #2b2620; border-color: var(--accent); font-weight: 600; }
+  .stat { color: var(--muted); font-size: 12px; margin-left: auto; }
+  .apply-btn {
+    background: var(--warn); color: #1a1208; border: 0; padding: 8px 18px;
+    border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 13px;
+    font-family: inherit;
+    transition: background 140ms ease, transform 100ms ease;
+  }
+  .apply-btn:hover:not(:disabled) { background: #fbbf24; transform: translateY(-1px); }
+  .apply-btn:disabled { background: var(--border); color: var(--dim); cursor: not-allowed; }
+
+  /* ---------- Grid ---------- */
+  .panel { display: none; }
+  .panel.active { display: block; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 14px;
+  }
+
+  /* ---------- Cards (shared) ---------- */
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px;
+    display: flex; flex-direction: column; gap: 10px;
+    transition: border-color 140ms ease, transform 140ms ease;
+  }
+  .card:hover { border-color: var(--accent); transform: translateY(-1px); }
+  .card.has-sprite { border-color: rgba(184, 146, 63, 0.32); }
+  .card.no-sprite  { opacity: 0.55; }
+  .card.dirty      { border-color: var(--warn); }
+  .head { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+  .name { font-weight: 600; font-size: 15px; letter-spacing: 0.1px; }
+  .id   { color: var(--dim); font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 11px; }
+  .rarity { font-size: 12px; color: var(--warn); letter-spacing: 1px; }
+  .desc { font-size: 12px; color: var(--muted); line-height: 1.45; min-height: 32px; }
+
+  /* ---------- Sprite preview ---------- */
+  .sprites {
+    display: grid; gap: 8px;
+    padding: 8px; background: var(--preview-bg);
+    border-radius: 8px; border: 1px solid var(--border);
+  }
+  .sprites.cols-3 { grid-template-columns: repeat(3, 1fr); }
+  .sprites.cols-1 { grid-template-columns: 1fr; }
+  .sprite-slot {
+    aspect-ratio: 1/1; background: var(--preview-bg);
+    border-radius: 6px; display: flex; align-items: center; justify-content: center;
+    overflow: hidden; position: relative;
+    border: 1px solid transparent;
+  }
+  .sprite-slot.solo { aspect-ratio: 16/9; }
+  .sprite-slot.clickable { cursor: pointer; transition: border-color .12s, transform .12s; }
+  .sprite-slot.clickable:hover { border-color: var(--accent, #4ea1ff); transform: translateY(-2px); }
+  .sprite-slot.clickable:hover .tag { background: var(--accent, #4ea1ff); color: #0b0b10; }
+  .sprite-slot.empty { border-color: var(--border); color: var(--dim); font-size: 11px; padding: 8px; text-align: center; }
+  .sprite-slot img { max-width: 100%; max-height: 100%; object-fit: contain; image-rendering: auto; }
+  .sprite-slot canvas { max-width: 100%; max-height: 100%; image-rendering: auto; display: block; }
+  .sprite-slot .tag {
+    position: absolute; bottom: 4px; left: 4px;
+    background: rgba(0,0,0,0.65); color: #cfcfdc;
+    padding: 1px 6px; border-radius: 999px;
+    font-size: 9px; letter-spacing: 0.4px;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+  }
+  .sprite-slot .tag .f { color: var(--muted); margin-left: 4px; }
+
+  /* ---------- Meta grid ---------- */
+  .meta-grid {
+    display: grid; grid-template-columns: max-content 1fr;
+    gap: 4px 10px; font-size: 11.5px;
+  }
+  .meta-grid .k { color: var(--dim); letter-spacing: 0.3px; text-transform: uppercase; font-size: 10px; align-self: center; }
+  .meta-grid .v { color: var(--text); display: flex; flex-wrap: wrap; gap: 4px; }
+  .chip {
+    background: var(--card2); border: 1px solid var(--border);
+    padding: 2px 8px; border-radius: 999px;
+    font-size: 10.5px; color: var(--muted);
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+  }
+  .chip.accent { background: rgba(184, 146, 63, 0.10);  border-color: rgba(184, 146, 63, 0.4);  color: var(--accent); }
+  .chip.warn   { background: rgba(245, 158, 11, 0.10);  border-color: rgba(245, 158, 11, 0.4);  color: var(--warn); }
+  .chip.green  { background: rgba(74, 222, 128, 0.10);  border-color: rgba(74, 222, 128, 0.4);  color: var(--green); }
+  .chip.rare   { background: rgba(167, 139, 250, 0.10); border-color: rgba(167, 139, 250, 0.4); color: var(--rare); }
+  .footer-meta {
+    display: flex; justify-content: space-between; align-items: center;
+    border-top: 1px solid var(--border); padding-top: 8px; margin-top: auto;
+    font-size: 10.5px; color: var(--dim);
+  }
+  /* ---------- Pet (rename) controls ---------- */
+  .rename-select {
+    width: 100%; padding: 8px 10px; background: var(--card2);
+    color: var(--text); border: 1px solid var(--border); border-radius: 6px;
+    font-size: 12px; font-family: inherit;
+  }
+  .rename-select.changed { border-color: var(--warn); color: var(--warn); }
+  .log {
+    margin-top: 16px; padding: 12px;
+    background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 11.5px; color: var(--muted);
+    white-space: pre-wrap; max-height: 200px; overflow: auto;
+  }
+  .empty { text-align: center; padding: 80px; color: var(--muted); }
+
+  /* ---------- Tuning modal ---------- */
+  .tune-overlay {
+    position: fixed; inset: 0;
+    background: rgba(8, 8, 14, 0.78);
+    backdrop-filter: blur(6px);
+    z-index: 500;
+    display: flex; align-items: center; justify-content: center;
+    padding: 32px 16px;
+    animation: tune-fade 180ms ease-out;
+  }
+  .tune-overlay[hidden] { display: none; }
+  @keyframes tune-fade { from { opacity: 0 } to { opacity: 1 } }
+  .tune-card {
+    width: min(1180px, 96vw);
+    max-height: calc(100vh - 48px);
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+    animation: tune-rise 200ms cubic-bezier(0.22, 0.61, 0.36, 1);
+    transition: width 200ms cubic-bezier(0.22, 0.61, 0.36, 1);
+  }
+  /* Scrub-mode expands the modal to ~720px so the preview can grow large
+     like a video editor. The `width` property is unreliable on a flex-row
+     parent (`.tune-overlay`), so use `min-width` to actually expand. */
+  .tune-card.frames-open { min-width: min(720px, 96vw); width: min(720px, 96vw); }
+  .tune-card.frames-open .tune-preview { aspect-ratio: 1/1; max-height: 56vh; }
+
+  /* Video-editor-style scrub bar */
+  .tune-scrub {
+    display: flex; flex-direction: column; gap: 8px;
+    background: #06060a;
+    border: 1px solid #1a1a22; border-radius: 10px;
+    padding: 10px 12px;
+  }
+  .tune-scrub[hidden] { display: none; }
+  .scrub-bar { position: relative; padding: 4px 0 14px; }
+  .scrub-bar input[type=range] {
+    width: 100%; accent-color: var(--accent);
+    margin: 0;
+  }
+  .scrub-marks {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    height: 8px; pointer-events: none;
+  }
+  .scrub-marks .mark {
+    position: absolute; top: 0; bottom: 0;
+    width: 2px; background: #ef4444;
+    transform: translateX(-1px);
+    border-radius: 1px;
+    opacity: 0.85;
+  }
+  .scrub-row {
+    display: flex; align-items: center; gap: 8px;
+    flex-wrap: wrap;
+    font-size: 12px; color: var(--muted);
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+  }
+  .scrub-frame b, .scrub-stat b { color: var(--accent); font-weight: 700; }
+  .scrub-stat { margin-left: auto; }
+  .scrub-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 5px 10px;
+    border-radius: 6px;
+    font-size: 11.5px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 120ms ease;
+  }
+  .scrub-btn:hover { background: var(--card2); border-color: var(--accent); }
+  .scrub-btn.play { min-width: 64px; }
+  .scrub-btn.play.is-playing { background: var(--accent); color: #2b2620; border-color: var(--accent); }
+  .scrub-btn.remove { border-color: rgba(239, 68, 68, 0.4); color: #ef4444; }
+  .scrub-btn.remove:hover { background: rgba(239, 68, 68, 0.12); border-color: #ef4444; }
+  .scrub-btn.remove.is-removed {
+    background: rgba(239, 68, 68, 0.18);
+    border-color: #ef4444;
+    color: #ffb4b4;
+  }
+  /* Frame thumbnail strip — hover magnifies, click toggles exclude. */
+  .tune-thumbs {
+    display: flex; flex-wrap: wrap; gap: 3px;
+    max-height: 104px; overflow-y: auto;
+    padding: 6px; background: var(--preview-bg);
+    border: 1px solid #1a1a22; border-radius: 8px;
+  }
+  .thumb {
+    position: relative; width: 44px; aspect-ratio: 1/1; flex: 0 0 auto;
+    border: 1px solid #2a2a36; border-radius: 4px; overflow: hidden;
+    cursor: pointer; background: var(--preview-bg);
+    transition: border-color 100ms ease, transform 80ms ease;
+  }
+  .thumb:hover { border-color: var(--accent); transform: scale(1.1); z-index: 2; }
+  .thumb img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .thumb .n {
+    position: absolute; bottom: 0; right: 1px;
+    font-size: 8px; color: #cfcfdc; background: rgba(0,0,0,0.6);
+    padding: 0 2px; border-radius: 2px; line-height: 1.3;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+  }
+  .thumb.cur { box-shadow: 0 0 0 2px var(--accent); border-color: var(--accent); }
+  .thumb.removed { border-color: rgba(239, 68, 68, 0.6); }
+  .thumb.removed img { opacity: 0.22; filter: grayscale(1); }
+  .thumb.removed::after {
+    content: '✕'; position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; color: #ef4444; font-weight: 700; pointer-events: none;
+    text-shadow: 0 0 3px rgba(239,68,68,0.6);
+  }
+  /* Floating hover-magnifier (body-level so position:fixed is viewport-anchored). */
+  .thumb-zoom {
+    position: fixed; z-index: 9999; pointer-events: none;
+    width: 224px; height: 224px; overflow: hidden;
+    border: 2px solid var(--accent); border-radius: 10px;
+    background: var(--preview-bg); box-shadow: 0 10px 30px rgba(0,0,0,0.55);
+  }
+  .thumb-zoom[hidden] { display: none; }
+  .thumb-zoom img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .thumb-zoom .zn {
+    position: absolute; top: 4px; left: 6px;
+    font-size: 10px; color: var(--accent); background: rgba(0,0,0,0.55);
+    padding: 1px 6px; border-radius: 999px;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+  }
+  /* ---------- Flux Kontext masked inpaint panel ---------- */
+  .tune-inpaint {
+    display: flex; flex-direction: column; gap: 10px;
+    background: #06060a; border: 1px solid #1a1a22; border-radius: 10px;
+    padding: 10px 12px;
+  }
+  .tune-inpaint[hidden] { display: none; }
+  .inpaint-status {
+    font-size: 11px; color: var(--muted);
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+  }
+  .inpaint-status.ok  { color: var(--green); }
+  .inpaint-status.bad { color: #ef4444; }
+  .inpaint-stage {
+    position: relative; width: 100%; max-width: 224px; aspect-ratio: 1/1;
+    margin: 0 auto; background: var(--preview-bg);
+    border-radius: 8px; overflow: hidden; touch-action: none;
+    border: 1px solid #1a1a22;
+  }
+  .inpaint-stage img, .inpaint-stage canvas {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+  }
+  .inpaint-stage img { object-fit: contain; }
+  .inpaint-stage #maskCanvas { opacity: 0.5; cursor: crosshair; }
+  .inpaint-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .ic-row { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted); }
+  .ic-row input[type=range] { accent-color: var(--accent); width: 110px; }
+  .ic-scope { font-size: 11.5px; color: var(--muted); }
+  .scope-btn {
+    background: transparent; border: 1px solid var(--border); color: var(--muted);
+    padding: 5px 10px; border-radius: 6px; font-size: 11.5px;
+    cursor: pointer; font-family: inherit; transition: all 120ms ease;
+  }
+  .scope-btn:hover { background: var(--card2); color: var(--text); }
+  .scope-btn.active { background: var(--accent); color: #2b2620; border-color: var(--accent); font-weight: 600; }
+  #brushEraser.active { background: var(--warn); color: #1a1208; border-color: var(--warn); }
+  .inpaint-prompt {
+    width: 100%; background: #06060a; color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px; padding: 8px;
+    font-family: inherit; font-size: 12px; resize: vertical;
+  }
+  .inpaint-result[hidden] { display: none; }
+  .ir-pair { display: flex; gap: 8px; }
+  .ir-pair figure { flex: 1; margin: 0; text-align: center; }
+  .ir-pair img {
+    width: 100%; aspect-ratio: 1/1; object-fit: contain;
+    background: var(--preview-bg); border: 1px solid #1a1a22; border-radius: 6px;
+  }
+  .ir-pair figcaption { font-size: 10px; color: var(--muted); margin-top: 2px; }
+  /* Checker backdrop on the matte 'after' image so transparency is visible. */
+  .matte-after {
+    background-color: #fff;
+    background-image:
+      linear-gradient(45deg, #c9c9c9 25%, transparent 25%),
+      linear-gradient(-45deg, #c9c9c9 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #c9c9c9 75%),
+      linear-gradient(-45deg, transparent 75%, #c9c9c9 75%);
+    background-size: 14px 14px;
+    background-position: 0 0, 0 7px, 7px -7px, -7px 0;
+  }
+  @keyframes tune-rise { from { opacity: 0; transform: translateY(10px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+  .tune-head {
+    display: flex; align-items: center; gap: 8px;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border);
+    background: var(--card2);
+  }
+  .tune-title {
+    flex: 1; font-weight: 600; font-size: 14px;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    color: var(--text); letter-spacing: 0.2px;
+  }
+  .tune-close {
+    background: transparent; border: 0;
+    color: var(--muted); font-size: 20px;
+    width: 28px; height: 28px; border-radius: 999px;
+    cursor: pointer; font-family: inherit;
+    transition: background 120ms ease;
+  }
+  .tune-close:hover { background: var(--card); color: var(--text); }
+  /* Wide multi-column body: three columns side by side so all tools fit on one
+     screen without a long scroll. Each column is its own vertical stack; the
+     body scrolls only as a fallback on small screens (media query below). */
+  .tune-body {
+    padding: 10px 14px; display: flex; flex-direction: column; gap: 12px;
+    flex: 1 1 auto; min-height: 0; overflow-y: auto;
+  }
+  .tune-body > * { flex-shrink: 0; }   /* don't squash the cover flow / rows */
+  .tune-col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+  .tune-col > * { flex-shrink: 0; }
+  .tune-col .tune-preview { max-height: 188px; }   /* keep col 1 compact */
+  /* ---------- Cover Flow frame browser ---------- */
+  .coverflow {
+    position: relative; height: 210px; perspective: 1100px; overflow: hidden;
+    background: var(--preview-bg); border: 1px solid #1a1a22; border-radius: 10px;
+    touch-action: none; user-select: none;
+  }
+  body.preview-checker .coverflow {
+    background-color: #fff;
+    background-image:
+      linear-gradient(45deg, #c9c9c9 25%, transparent 25%),
+      linear-gradient(-45deg, #c9c9c9 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #c9c9c9 75%),
+      linear-gradient(-45deg, transparent 75%, #c9c9c9 75%);
+    background-size: 18px 18px; background-position: 0 0, 0 9px, 9px -9px, -9px 0;
+  }
+  .cf-stage { position: absolute; inset: 0; transform-style: preserve-3d; }
+  .cf-item {
+    position: absolute; left: 50%; top: 50%; width: 152px; height: 152px;
+    transition: transform 300ms cubic-bezier(.22,.61,.36,1), opacity 200ms;
+    will-change: transform;
+  }
+  .cf-item img {
+    width: 100%; height: 100%; object-fit: contain; border-radius: 6px;
+    box-shadow: 0 10px 26px rgba(0,0,0,0.45);
+  }
+  .cf-item:not(.center) { cursor: pointer; }
+  .cf-item.center img { outline: 2px solid var(--accent); outline-offset: 1px; box-shadow: 0 14px 38px rgba(0,0,0,0.6); }
+  .cf-item.removed img { filter: grayscale(1) brightness(0.45); }
+  .cf-item.removed::after {
+    content: '✕'; position: absolute; inset: 0; display: flex; align-items: center;
+    justify-content: center; font-size: 46px; color: #ef4444; font-weight: 700;
+    text-shadow: 0 0 6px rgba(0,0,0,0.6); pointer-events: none;
+  }
+  .cf-slider { width: 100%; margin: 8px 0 4px; cursor: pointer; accent-color: var(--accent, #b8923f); }
+  .cf-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .scrub-btn.remove.is-removed { background: rgba(239,68,68,0.18); border-color: #ef4444; color: #ffb4b4; }
+  /* Lower row: tuning sidebar (left) + Flux column (right) */
+  .tune-lower { display: flex; flex-direction: row; gap: 14px; align-items: flex-start; }
+  .tune-side { flex: 0 0 296px; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+  .tune-fluxcol { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+  .tune-side > *, .tune-fluxcol > * { flex-shrink: 0; }
+  @media (max-width: 900px) { .tune-lower { flex-direction: column; } .tune-side { flex-basis: auto; } }
+
+  /* ============================================================
+     LUXE RE-SKIN (cream + gold) — scoped to the tuning modal.
+     Re-theme by redefining the CSS vars on the modal root: every
+     descendant using var(--accent/--card/--border/--text/...) follows.
+     ============================================================ */
+  .tune-overlay {
+    background: rgba(244, 240, 232, 0.55);
+    -webkit-backdrop-filter: blur(14px) saturate(1.05);
+    backdrop-filter: blur(14px) saturate(1.05);
+  }
+  .tune-card {
+    --card: #fdfbf6; --card2: #f5efe3; --border: #e6dcc4;
+    --text: #2b2620; --muted: #94897a; --dim: #b9af97;
+    --accent: #b8923f; --green: #7e9a57; --warn: #c08a3a;
+    background: linear-gradient(180deg, #fdfcf8 0%, #f4eede 100%);
+    border: 1px solid #e6dcc4;
+    box-shadow: 0 30px 90px rgba(120, 92, 30, 0.22), 0 2px 8px rgba(120, 92, 30, 0.10);
+    color: var(--text);
+  }
+  .tune-head  { background: transparent; border-bottom: 1px solid #ece3cf; }
+  .tune-foot  { border-top: 1px solid #ece3cf; }
+  .tune-title { color: #2b2620; font-family: Georgia, 'Times New Roman', serif; letter-spacing: 0.6px; font-weight: 600; }
+  .tune-close { color: #b8923f; }
+  .col-title  { color: #a07f33; border-bottom: 1px solid #ece3cf; font-family: Georgia, 'Times New Roman', serif; letter-spacing: 1.4px; font-weight: 600; }
+  .tune-card input[type=range] { accent-color: #b8923f; }
+  /* Gold-filled primary controls */
+  .tune-btn.save, .scope-btn.active, .pvbg-btn.active, .fade-type.active {
+    background: linear-gradient(180deg, #d8b65e 0%, #b8923f 100%) !important;
+    color: #fff !important; border-color: #a8842f !important;
+    box-shadow: 0 2px 6px rgba(160, 120, 40, 0.30);
+  }
+  .tune-btn.save:hover { background: linear-gradient(180deg, #e3c46c 0%, #c29c44 100%) !important; }
+  .scope-btn, .pvbg-btn, .fade-type, .scrub-btn {
+    background: #fffdf8; border-color: #e6dcc4; color: #a07f33;
+  }
+  .scope-btn:hover, .pvbg-btn:hover, .fade-type:hover, .scrub-btn:hover { background: #f6efdf; color: #8a6c28; }
+  /* Light surfaces (replace the near-black hardcoded fills) */
+  .tune-inpaint  { background: #fffdf8; border: 1px solid #ece3cf; box-shadow: 0 1px 3px rgba(120,92,30,0.06); }
+  .flux-gallery  { background: #f5efe3; border: 1px solid #e6dcc4; }
+  .inpaint-prompt{ background: #fff; border: 1px solid #e6dcc4; color: #2b2620; }
+  .inpaint-stage, .scrub-preview, .tune-preview { border: 1px solid #e6dcc4; }
+  .inpaint-status.ok  { color: #7e9a57; }
+  .inpaint-status.bad { color: #c0593a; }
+  /* ---- Cover Flow: glossy cream floor, gold center frame, reflections ---- */
+  .coverflow {
+    background: linear-gradient(180deg, #fdfcf8 0%, #f3ecdd 74%, #ebe1cd 100%);
+    border: 1px solid #e6dcc4;
+  }
+  .cf-item img {
+    border: 1px solid rgba(184, 146, 63, 0.30);
+    box-shadow: 0 14px 30px rgba(90, 70, 25, 0.26);
+  }
+  .cf-item.center img {
+    outline: none;
+    border: 3px solid #c6a14c;
+    box-shadow: 0 18px 46px rgba(120, 92, 30, 0.42);
+  }
+  .scrub-frame b, .scrub-stat b { color: #b8923f; }
+  .scrub-btn.play.is-playing { background: linear-gradient(180deg,#d8b65e,#b8923f); color: #fff; border-color: #a8842f; }
+  .scrub-btn.remove { color: #c0593a; border-color: #e6cbbf; background: #fffaf7; }
+  .scrub-btn.remove.is-removed { background: rgba(192,89,58,0.12); border-color: #c0593a; color: #a8442a; }
+  .gallery-label, .ic-scope, .ic-row { color: #94897a; }
+  .gal-item.orig .gl { color: #7e9a57; }
+  .col-title {
+    font-size: 10.5px; color: var(--accent); letter-spacing: 0.6px;
+    text-transform: uppercase; font-family: 'JetBrains Mono', ui-monospace, monospace;
+    border-bottom: 1px solid var(--border); padding-bottom: 5px;
+  }
+  /* Scrub's own preview (col 2) — separate from the autoplay preview in col 1. */
+  .scrub-preview {
+    aspect-ratio: 1/1; max-height: 150px; background: var(--preview-bg);
+    border: 1px solid #1a1a22; border-radius: 8px; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .scrub-preview img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  body.preview-checker .scrub-preview {
+    background-color: #fff;
+    background-image:
+      linear-gradient(45deg, #c9c9c9 25%, transparent 25%),
+      linear-gradient(-45deg, #c9c9c9 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #c9c9c9 75%),
+      linear-gradient(-45deg, transparent 75%, #c9c9c9 75%);
+    background-size: 16px 16px; background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+  }
+  /* Flux variant gallery */
+  .gallery-wrap { display: flex; flex-direction: column; gap: 4px; }
+  .gallery-label { font-size: 10.5px; color: var(--muted); }
+  .flux-gallery {
+    display: flex; gap: 6px; overflow-x: auto; padding: 5px; min-height: 60px;
+    background: #06060a; border: 1px solid #1a1a22; border-radius: 8px;
+  }
+  .gal-item {
+    flex: 0 0 auto; width: 62px; height: 62px; position: relative;
+    border: 2px solid transparent; border-radius: 6px; overflow: hidden;
+    cursor: pointer; background: var(--preview-bg);
+  }
+  .gal-item:hover { border-color: var(--muted); }
+  .gal-item.sel { border-color: var(--accent); }
+  .gal-item img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .gal-item .gl {
+    position: absolute; bottom: 0; left: 0; right: 0; font-size: 8px; text-align: center;
+    background: rgba(0,0,0,0.62); color: #cfcfdc; line-height: 1.4;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+  }
+  .gal-item.orig .gl { color: var(--green); }
+  /* Narrow screens: stack columns, body scrolls as fallback. */
+  @media (max-width: 920px) { .tune-body { flex-direction: column; } }
+  .tune-preview {
+    aspect-ratio: 1/1; background: var(--preview-bg);
+    border-radius: 10px; display: flex; align-items: center; justify-content: center;
+    position: relative; overflow: hidden;
+    border: 1px solid #1a1a22;
+  }
+  /* Checkerboard backdrop = "see the real transparency" preview option. */
+  body.preview-checker .sprites,
+  body.preview-checker .sprite-slot,
+  body.preview-checker .tune-preview {
+    background-color: #fff;
+    background-image:
+      linear-gradient(45deg, #c9c9c9 25%, transparent 25%),
+      linear-gradient(-45deg, #c9c9c9 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #c9c9c9 75%),
+      linear-gradient(-45deg, transparent 75%, #c9c9c9 75%);
+    background-size: 16px 16px;
+    background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+  }
+  /* Preview-bg picker (in the tuning modal). */
+  .pvbg-types { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .pvbg-btn {
+    background: transparent; border: 1px solid var(--border); color: var(--muted);
+    padding: 5px 9px; border-radius: 7px; font-size: 11.5px;
+    font-family: inherit; cursor: pointer; transition: all 120ms ease;
+  }
+  .pvbg-btn:hover { background: var(--card2); color: var(--text); }
+  .pvbg-btn.active { background: var(--accent); color: #2b2620; border-color: var(--accent); font-weight: 600; }
+  .pvbg-color {
+    width: 30px; height: 26px; padding: 0; border: 1px solid var(--border);
+    border-radius: 7px; background: transparent; cursor: pointer;
+  }
+  .tune-preview img {
+    max-width: 92%; max-height: 92%; object-fit: contain;
+    image-rendering: auto;
+    transition: transform 120ms ease;
+  }
+  .tune-tag {
+    position: absolute; bottom: 8px; left: 8px;
+    background: rgba(0,0,0,0.6); color: var(--muted);
+    padding: 2px 8px; border-radius: 999px;
+    font-size: 10px; font-family: 'JetBrains Mono', ui-monospace, monospace;
+  }
+  .tune-row { display: flex; flex-direction: column; gap: 6px; }
+  .tune-row label {
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-size: 11.5px; color: var(--muted); letter-spacing: 0.3px;
+  }
+  .tune-val {
+    color: var(--accent); font-weight: 600;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 12px;
+  }
+  .tune-row input[type=range] {
+    width: 100%;
+    accent-color: var(--accent);
+  }
+  /* Edge-fade type selector */
+  .fade-types { display: flex; gap: 6px; }
+  .fade-type {
+    flex: 1;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    padding: 6px 8px;
+    border-radius: 7px;
+    font-size: 11.5px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 120ms ease;
+  }
+  .fade-type:hover { background: var(--card2); color: var(--text); }
+  .fade-type.active {
+    background: var(--accent); color: #2b2620;
+    border-color: var(--accent); font-weight: 600;
+  }
+  .tune-foot {
+    display: flex; gap: 8px; justify-content: flex-end;
+    padding: 12px 14px;
+    border-top: 1px solid var(--border);
+  }
+  .tune-btn {
+    border: 1px solid var(--border);
+    padding: 7px 16px; border-radius: 8px;
+    font-size: 12px; cursor: pointer;
+    font-family: inherit; font-weight: 600;
+    transition: all 120ms ease;
+  }
+  .tune-btn.reset {
+    background: transparent; color: var(--muted);
+  }
+  .tune-btn.reset:hover { background: var(--card2); color: var(--text); }
+  .tune-btn.save {
+    background: var(--accent); color: #2b2620;
+    border-color: var(--accent);
+  }
+  .tune-btn.save:hover { background: #5ee0f0; }
+
+  /* Generating state — clear spinner + pulse on the 생성 button */
+  .tune-btn.generating {
+    position: relative; padding-left: 30px;
+    cursor: progress !important; opacity: 1 !important;
+    background: linear-gradient(180deg, #e3c46c 0%, #c29c44 100%) !important;
+    color: #3a2d08 !important; border-color: #c29c44 !important;
+    animation: genpulse 1.1s ease-in-out infinite;
+  }
+  .tune-btn.generating::before {
+    content: ""; position: absolute; left: 11px; top: 50%;
+    width: 12px; height: 12px; margin-top: -6px;
+    border: 2px solid rgba(58,45,8,0.3); border-top-color: #3a2d08;
+    border-radius: 50%; animation: genspin 0.7s linear infinite;
+  }
+  @keyframes genspin { to { transform: rotate(360deg); } }
+  @keyframes genpulse {
+    0%,100% { box-shadow: 0 0 0 0 rgba(194,156,68,0.55); }
+    50%     { box-shadow: 0 0 0 6px rgba(194,156,68,0); }
+  }
+
+  /* Frame grid toggle button (inside tune-row label) */
+  .tune-toggle {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 11px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 120ms ease;
+  }
+  .tune-toggle:hover { background: var(--card2); color: var(--text); border-color: var(--accent); }
+
+  /* Per-frame grid (lazy-loaded thumbnails inside the tune modal) */
+  .frame-grid {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 4px;
+    max-height: 280px;
+    overflow-y: auto;
+    background: #06060a;
+    padding: 8px;
+    border-radius: 8px;
+    border: 1px solid #1a1a22;
+    margin-top: 4px;
+  }
+  .frame-grid[hidden] { display: none; }
+  .frame-cell {
+    position: relative;
+    background: #0e0e14;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    cursor: pointer;
+    aspect-ratio: 1/1;
+    padding: 0;
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
+    transition: border-color 100ms ease, transform 80ms ease;
+  }
+  .frame-cell:hover { border-color: var(--accent); transform: scale(1.05); z-index: 2; }
+  .frame-cell img {
+    width: 100%; height: 100%;
+    object-fit: cover;
+    image-rendering: auto;
+    transition: opacity 120ms ease, filter 120ms ease;
+  }
+  .frame-cell span {
+    position: absolute; bottom: 1px; right: 2px;
+    background: rgba(0,0,0,0.7); color: #cfcfdc;
+    font-size: 8px; padding: 0 3px; border-radius: 3px;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    line-height: 1.3;
+  }
+  .frame-cell.removed { border-color: rgba(239, 68, 68, 0.5); }
+  .frame-cell.removed img { opacity: 0.25; filter: grayscale(1); }
+  .frame-cell.removed::after {
+    content: '✕';
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; color: #ef4444;
+    pointer-events: none;
+    font-weight: 700;
+    text-shadow: 0 0 4px rgba(239, 68, 68, 0.6);
+  }
+  /* Project switcher bar */
+  .proj-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    margin: 4px 0 14px; padding: 8px 12px; border-radius: 10px;
+    background: var(--card, #15151c); border: 1px solid var(--border, #2a2a35); }
+  .proj-label { font-size: 13px; font-weight: 600; opacity: .85; }
+  .proj-select { background: var(--card2, #1d1d27); color: var(--text, #e8e8ef);
+    border: 1px solid var(--border, #2a2a35); border-radius: 8px; padding: 5px 10px;
+    font-size: 14px; font-weight: 600; cursor: pointer; min-width: 180px; }
+  .proj-act { font-size: 12px; padding: 5px 10px; }
+  .proj-hint { font-size: 12px; opacity: .6; margin-left: auto; }
+  .pills-wrap { display: inline-flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .pill .shared-dot { color: #b8923f; margin-left: 3px; font-size: 11px; }
+  .pill.is-shared { border-style: dashed; }
+</style>
+</head>
+<body>
+
+  <div class="head-row">
+    <h1>🗺 Sprite Atlas</h1>
+    <span class="badge">asset tool</span>
+  </div>
+  <div class="sub">여러 게임 프로젝트의 스프라이트·애니메이션을 한 곳에서 관리·편집.</div>
+
+  <!-- Project switcher (multi-project asset management) -->
+  <div class="proj-bar">
+    <span class="proj-label">📦 프로젝트</span>
+    <select id="projectSelect" class="proj-select"></select>
+    <button class="pill proj-act" id="newProjectBtn" type="button">+ 새 프로젝트</button>
+    <button class="pill proj-act" id="rebuildBtn" type="button" title="이 프로젝트의 스프라이트 폴더를 다시 스캔해 매니페스트 갱신">↻ 새로고침</button>
+    <button class="pill proj-act" id="importFolderBtn" type="button" title="내 컴퓨터의 폴더를 골라 그 안의 이미지(png·jpg·gif·webp·bmp)를 애니메이션으로 미리보기 (저장 안 함, 비파괴)">📂 폴더 불러오기</button>
+    <button class="pill proj-act" id="sliceBtn" type="button" title="스프라이트 시트 1장을 격자로 잘라 애니메이션으로 만들고 프로젝트에 저장">✂ 시트 자르기</button>
+    <input type="file" id="sliceInput" accept="image/*" hidden>
+    <button class="pill proj-act" id="importSaveBtn" type="button" hidden title="불러온 폴더를 프로젝트에 영구 저장 (하위폴더=액션)">💾 프로젝트에 저장</button>
+    <button class="pill proj-act" id="importBackBtn" type="button" hidden title="원래 프로젝트 폴더 보기로 되돌리기">↩ 되돌리기</button>
+    <input type="file" id="importFolderInput" webkitdirectory directory multiple hidden>
+    <span class="proj-hint" id="projHint"></span>
+  </div>
+
+  <!-- Category nav -->
+  <div class="nav" id="nav">
+    <button class="nav-tab active" data-cat="pet">
+      🌱 펫 <span class="count" id="cnt-pet">—</span>
+    </button>
+    <button class="nav-tab" data-cat="monster">
+      👹 몬스터 <span class="count" id="cnt-monster">—</span>
+    </button>
+    <button class="nav-tab" data-cat="boss">
+      💀 보스 <span class="count" id="cnt-boss">—</span>
+    </button>
+  </div>
+
+  <!-- =================== PET PANEL =================== -->
+  <div class="panel active" id="panel-pet">
+    <div class="subbar">
+      <span id="petPills" class="pills-wrap"></span>
+      <span class="stat" id="stat-pet">—</span>
+      <button class="apply-btn" id="apply-pet" disabled>변경 적용</button>
+    </div>
+    <div class="grid" id="grid-pet"></div>
+    <div class="log" id="log"></div>
+  </div>
+
+  <!-- =================== MONSTER PANEL =================== -->
+  <div class="panel" id="panel-monster">
+    <div class="subbar">
+      <button class="pill active" data-filter="all">전체</button>
+      <button class="pill"        data-filter="with-sprite">스프라이트 있음</button>
+      <button class="pill"        data-filter="no-sprite">스프라이트 없음</button>
+      <span class="stat" id="stat-monster">—</span>
+    </div>
+    <div class="grid" id="grid-monster"></div>
+  </div>
+
+  <!-- =================== BOSS PANEL =================== -->
+  <div class="panel" id="panel-boss">
+    <div class="empty">보스 카탈로그는 곧 추가됩니다. 현재 보스 sprite는 아직 watercolor 영상화 전.</div>
+  </div>
+
+  <!-- =================== SHEET SLICING MODAL =================== -->
+  <div class="tune-overlay" id="sliceOverlay" hidden>
+    <div class="tune-card" style="max-width:820px; width:min(820px,96vw);">
+      <div class="tune-head">
+        <span class="tune-title">✂ 스프라이트 시트 슬라이싱</span>
+        <button class="tune-close" id="sliceClose" type="button" aria-label="닫기">×</button>
+      </div>
+      <div class="tune-body" style="display:block; max-height:78vh; overflow:auto;">
+        <div style="display:flex; gap:16px; flex-wrap:wrap;">
+          <div style="flex:1.3; min-width:300px;">
+            <div class="col-title">시트 (격자 미리보기)</div>
+            <div style="border:1px solid var(--border,#2a2a35); border-radius:8px; overflow:auto; background:#0e0e14; max-height:46vh;">
+              <canvas id="sliceSheet" style="display:block; max-width:100%;"></canvas>
+            </div>
+          </div>
+          <div style="flex:1; min-width:230px;">
+            <div class="col-title">자르기 설정</div>
+            <div class="tune-row"><label>모드</label>
+              <select id="sliceMode" class="proj-select" style="min-width:140px;">
+                <option value="grid">행 × 열 (격자)</option>
+                <option value="cell">셀 크기 (px)</option>
+              </select>
+            </div>
+            <div id="sliceGridCtl">
+              <div class="tune-row"><label>열(가로) <span class="tune-val" id="sliceColsV">4</span></label><input type="range" id="sliceCols" min="1" max="24" value="4"></div>
+              <div class="tune-row"><label>행(세로) <span class="tune-val" id="sliceRowsV">4</span></label><input type="range" id="sliceRows" min="1" max="24" value="4"></div>
+            </div>
+            <div id="sliceCellCtl" hidden>
+              <div class="tune-row"><label>셀 너비(px)</label><input type="number" id="sliceCellW" value="64" min="1" style="width:80px;"></div>
+              <div class="tune-row"><label>셀 높이(px)</label><input type="number" id="sliceCellH" value="64" min="1" style="width:80px;"></div>
+            </div>
+            <div class="tune-row"><label><input type="checkbox" id="sliceTrim" checked> 빈 칸(투명) 자동 제외</label></div>
+            <div id="sliceInfo" style="font-size:12px; opacity:.7; margin-top:4px;"></div>
+          </div>
+        </div>
+        <div class="col-title" style="margin-top:10px;">잘린 프레임 · 애니메이션</div>
+        <div style="display:flex; gap:16px; align-items:flex-start; flex-wrap:wrap;">
+          <div class="sprite-slot solo" style="width:150px; height:150px; flex:0 0 auto; background:#fff; border-radius:8px;">
+            <img id="sliceAnim" alt="" style="width:100%; height:100%; object-fit:contain;">
+          </div>
+          <div style="flex:1; min-width:240px;">
+            <div class="tune-row"><label>속도 <span class="tune-val" id="sliceFpsV">12 fps</span></label><input type="range" id="sliceFps" min="1" max="30" value="12"></div>
+            <div id="sliceStrip" style="display:flex; gap:4px; flex-wrap:wrap; max-height:130px; overflow:auto; margin-top:4px;"></div>
+          </div>
+        </div>
+        <div style="display:flex; gap:8px; justify-content:flex-end; align-items:center; margin-top:14px;">
+          <span id="sliceStatus" style="margin-right:auto; font-size:12px; opacity:.7;"></span>
+          <button class="pill" id="sliceReload" type="button">🖼 다른 시트</button>
+          <button class="pill" id="sliceSaveBtn" type="button">💾 프로젝트에 저장</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- =================== FRAME MANAGER MODAL =================== -->
+  <div class="tune-overlay" id="fmOverlay" hidden>
+    <div class="tune-card" style="max-width:840px; width:min(840px,96vw);">
+      <div class="tune-head">
+        <span class="tune-title" id="fmTitle">🎞 프레임 관리</span>
+        <button class="tune-close" id="fmClose" type="button" aria-label="닫기">×</button>
+      </div>
+      <div class="tune-body" style="display:block; max-height:80vh; overflow:auto;">
+        <div style="display:flex; gap:16px; align-items:flex-start; flex-wrap:wrap;">
+          <div class="sprite-slot solo" style="width:150px; height:150px; flex:0 0 auto; background:#fff; border-radius:8px;">
+            <img id="fmAnim" alt="" style="width:100%; height:100%; object-fit:contain;">
+          </div>
+          <div style="flex:1; min-width:240px;">
+            <div class="tune-row"><label>속도 <span class="tune-val" id="fmFpsV">12 fps</span></label><input type="range" id="fmFps" min="1" max="30" value="12"></div>
+            <div id="fmInfo" style="font-size:12px; opacity:.7;"></div>
+            <div class="tune-row" style="margin-top:6px;">
+              <button class="pill" id="fmAddBtn" type="button">+ 프레임 추가</button>
+              <input type="file" id="fmAddInput" accept="image/*" multiple hidden>
+            </div>
+          </div>
+        </div>
+        <div class="col-title" style="margin-top:10px;">프레임 — 드래그로 순서변경 · 각 프레임 ◀ 복제 ✕ ▶</div>
+        <div id="fmStrip" style="display:flex; gap:6px; flex-wrap:wrap;"></div>
+        <div style="display:flex; gap:8px; justify-content:flex-end; align-items:center; margin-top:14px;">
+          <span id="fmStatus" style="margin-right:auto; font-size:12px; opacity:.7;"></span>
+          <button class="pill" id="fmSaveBtn" type="button">💾 저장 (이 액션 덮어쓰기)</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- =================== PIXEL EDITOR MODAL =================== -->
+  <div class="tune-overlay" id="pxOverlay" hidden>
+    <div class="tune-card" style="max-width:900px; width:min(900px,97vw);">
+      <div class="tune-head">
+        <span class="tune-title" id="pxTitle">🖌 픽셀 편집기</span>
+        <button class="tune-close" id="pxClose" type="button" aria-label="닫기">×</button>
+      </div>
+      <div class="tune-body" style="display:block; max-height:84vh; overflow:auto;">
+        <div style="display:flex; gap:14px; flex-wrap:wrap;">
+          <div style="flex:0 0 auto; display:flex; flex-direction:column; gap:8px; min-width:160px;">
+            <div class="col-title">도구</div>
+            <div style="display:flex; gap:4px; flex-wrap:wrap;">
+              <button class="pill px-tool active" data-tool="brush" type="button">🖌 브러시</button>
+              <button class="pill px-tool" data-tool="eraser" type="button">🧽 지우개</button>
+              <button class="pill px-tool" data-tool="fill" type="button">🪣 채우기</button>
+              <button class="pill px-tool" data-tool="pick" type="button">💧 스포이드</button>
+            </div>
+            <div class="tune-row"><label>색</label><input type="color" id="pxColor" value="#222222" style="width:48px;height:28px;"></div>
+            <div class="tune-row"><label>굵기 <span class="tune-val" id="pxSizeV">8</span></label><input type="range" id="pxSize" min="1" max="80" value="8"></div>
+            <div class="tune-row"><label><input type="checkbox" id="pxOnion"> 어니언스킨(이전 프레임)</label></div>
+            <div style="display:flex; gap:4px;">
+              <button class="pill" id="pxUndo" type="button">↶ 취소</button>
+              <button class="pill" id="pxRedo" type="button">↷ 다시</button>
+            </div>
+            <div class="tune-row" style="align-items:center; gap:6px;">
+              <button class="pill" id="pxPrev" type="button">◀</button>
+              <span id="pxFrameLbl" class="tune-val">f1</span>
+              <button class="pill" id="pxNext" type="button">▶</button>
+            </div>
+            <div id="pxInfo" style="font-size:12px; opacity:.7;"></div>
+          </div>
+          <div style="flex:1; min-width:300px;">
+            <div class="col-title">캔버스 — 드래그로 그리기</div>
+            <div style="position:relative; display:inline-block; border:1px solid var(--border,#333); border-radius:8px; background-color:#fff; background-image:linear-gradient(45deg,#eee 25%,transparent 25%),linear-gradient(-45deg,#eee 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#eee 75%),linear-gradient(-45deg,transparent 75%,#eee 75%); background-size:16px 16px; background-position:0 0,0 8px,8px -8px,-8px 0;">
+              <canvas id="pxOnionCv" style="position:absolute; left:0; top:0; opacity:.3; pointer-events:none;"></canvas>
+              <canvas id="pxCanvas" style="position:relative; touch-action:none; cursor:crosshair; display:block;"></canvas>
+            </div>
+          </div>
+        </div>
+        <div style="display:flex; gap:8px; justify-content:flex-end; align-items:center; margin-top:14px;">
+          <span id="pxStatus" style="margin-right:auto; font-size:12px; opacity:.7;"></span>
+          <button class="pill" id="pxSaveBtn" type="button">💾 저장 (이 액션 덮어쓰기)</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- =================== TUNING MODAL =================== -->
+  <div class="tune-overlay" id="tuneOverlay" hidden>
+    <div class="tune-card">
+      <div class="tune-head">
+        <span class="tune-title" id="tuneTitle">action</span>
+        <button class="tune-close" id="tuneClose" type="button" aria-label="닫기">×</button>
+      </div>
+      <div class="tune-body">
+        <div class="tune-lower">
+        <div class="tune-side">
+        <div class="col-title">미리보기 · 튜닝</div>
+        <div class="tune-preview">
+          <img id="tunePreview" alt="">
+          <span class="tune-tag" id="tuneTag"></span>
+        </div>
+        <!-- Preview backdrop picker. Edge-fade is a transparency mask, so it
+             only "reads" against a real backdrop — default white matches the
+             in-game card (#fff); checker shows the actual transparency. -->
+        <div class="tune-row">
+          <label>미리보기 배경 <span class="tune-val" id="pvbgVal">게임 흰색</span></label>
+          <div class="pvbg-types">
+            <button class="pvbg-btn" data-bg="#ffffff" type="button">게임 흰</button>
+            <button class="pvbg-btn" data-bg="#fafaf7" type="button">연회색</button>
+            <button class="pvbg-btn" data-bg="#0e0e14" type="button">어두움</button>
+            <button class="pvbg-btn" data-bg="checker" type="button">체커(투명)</button>
+            <input type="color" id="pvbgCustom" class="pvbg-color" value="#ffffff" title="사용자 색 선택">
+          </div>
+        </div>
+        <!-- (frame scrub replaced by the Cover Flow browser above) -->
+        <div class="tune-row">
+          <label>크기 <span class="tune-val" id="tuneScaleVal">1.00×</span></label>
+          <input type="range" id="tuneScale" min="0.5" max="3.0" step="0.05" value="1.0">
+        </div>
+        <div class="tune-row">
+          <label>좌우 위치 <span class="tune-val" id="tuneOffXVal">0px</span></label>
+          <input type="range" id="tuneOffX" min="-120" max="120" step="1" value="0">
+        </div>
+        <div class="tune-row">
+          <label>상하 위치 <span class="tune-val" id="tuneOffYVal">0px</span></label>
+          <input type="range" id="tuneOffY" min="-120" max="120" step="1" value="0">
+        </div>
+        <div class="tune-row">
+          <label>시작 프레임 <span class="tune-val" id="tuneStartVal">1</span></label>
+          <input type="range" id="tuneStart" min="1" max="241" step="1" value="1">
+        </div>
+        <div class="tune-row">
+          <label>끝 프레임 <span class="tune-val" id="tuneEndVal">241</span></label>
+          <input type="range" id="tuneEnd" min="1" max="241" step="1" value="241">
+        </div>
+        <div class="tune-row">
+          <label>가장자리 페이드 <span class="tune-val" id="tuneFadeVal">없음</span></label>
+          <div class="fade-types">
+            <button class="fade-type active" data-fade="none" type="button">없음</button>
+            <button class="fade-type" data-fade="rect" type="button">⬛ 네모</button>
+            <button class="fade-type" data-fade="circle" type="button">⬤ 동그라미</button>
+          </div>
+        </div>
+        <div class="tune-row" id="tuneFadeAmountRow" hidden>
+          <label>흐려지는 정도 <span class="tune-val" id="tuneFadeAmountVal">30%</span></label>
+          <input type="range" id="tuneFadeAmount" min="5" max="60" step="1" value="30">
+        </div>
+        </div><!-- /sidebar -->
+        <div class="tune-fluxcol">
+        <div class="col-title">✏️ 부분수정 (Flux)</div>
+        <!-- Flux masked inpaint: paint a region, describe the edit; Kontext
+             regenerates and we composite only the painted region back. -->
+        <div class="tune-inpaint" id="tuneInpaint">
+          <div class="inpaint-status" id="inpaintStatus">ComfyUI 확인 중…</div>
+          <div class="inpaint-controls">
+            <span class="ic-scope">모델</span>
+            <button class="scope-btn active" data-fluxmodel="fill" type="button" title="FLUX Fill 인페인트 — 칠한 영역만 깔끔하게, 일관성 좋음">Fill (인페인트)</button>
+            <button class="scope-btn" data-fluxmodel="kontext" type="button" title="FLUX Kontext — 전체 재생성 후 합성">Kontext</button>
+          </div>
+          <div class="inpaint-stage" id="inpaintStage">
+            <img id="inpaintFrame" alt="frame">
+            <canvas id="maskCanvas"></canvas>
+          </div>
+          <!-- Cover Flow frame browser — a section INSIDE 부분수정: pick/flip the frame here -->
+          <div class="col-title">프레임 — 커버 플로우 (슬라이더 · 휠 · 클릭 / ← →)</div>
+          <div class="coverflow" id="coverflow"><div class="cf-stage" id="cfStage"></div></div>
+          <input type="range" id="cfSlider" class="cf-slider" min="1" max="145" value="1" title="프레임 스크롤 (드래그로 빠르게 이동)">
+          <div class="cf-bar">
+            <button class="scrub-btn" id="cfPrev" type="button" title="이전">◀</button>
+            <span class="scrub-frame">프레임 <b id="cfNum">1</b> / <span id="cfTotal">145</span></span>
+            <button class="scrub-btn" id="cfNext" type="button" title="다음">▶</button>
+            <button class="scrub-btn play" id="cfPlay" type="button" title="재생/정지">▶ 재생</button>
+            <button class="scrub-btn remove" id="cfExclude" type="button">✕ 이 프레임 제외</button>
+            <span class="scrub-stat">제외 <b id="tuneRemovedCnt">0</b>개</span>
+          </div>
+          <div class="inpaint-controls">
+            <label class="ic-row">브러시 <input type="range" id="brushSize" min="6" max="160" value="48"></label>
+            <button class="scope-btn" id="brushEraser" type="button">지우개</button>
+            <button class="scope-btn" id="brushClear" type="button">전체 지우기</button>
+          </div>
+          <textarea id="inpaintPrompt" class="inpaint-prompt" rows="2" placeholder="칠한 영역을 어떻게 바꿀지 (예: 이마의 보석을 더 밝게 빛나게, 갑옷에 이끼 추가)"></textarea>
+          <div class="inpaint-controls">
+            <span class="ic-scope">적용 범위</span>
+            <button class="scope-btn active" data-scope="this" type="button">이 프레임</button>
+            <button class="scope-btn" data-scope="all" type="button">전체 프레임(느림)</button>
+            <button class="tune-btn save" id="inpaintGen" type="button" style="margin-left:auto">생성</button>
+          </div>
+          <div class="gallery-wrap">
+            <div class="gallery-label">생성 결과 · 클릭해서 선택 (첫 칸 = 원본)</div>
+            <div class="flux-gallery" id="fluxGallery"></div>
+          </div>
+          <div class="inpaint-controls">
+            <button class="scope-btn" id="inpaintRestore" type="button">↺ 원본 복원</button>
+            <button class="tune-btn save" id="inpaintApply" type="button" style="margin-left:auto">선택 적용</button>
+          </div>
+        </div>
+        <div class="col-title" style="margin-top:6px">🪄 누끼 다시 따기 (배경 제거)</div>
+        <!-- Re-matte: InSPyReNet background removal — automatic, no mask. -->
+        <div class="tune-inpaint" id="tuneMatte">
+          <div class="inpaint-status" id="matteStatus">현재 프레임 배경을 InSPyReNet로 제거 (CPU)</div>
+          <div class="inpaint-result" id="matteResult" hidden>
+            <div class="ir-pair">
+              <figure><img id="mBefore" alt="before"><figcaption>원본</figcaption></figure>
+              <figure><img id="mAfter" class="matte-after" alt="after"><figcaption>누끼 결과 (체커=투명)</figcaption></figure>
+            </div>
+          </div>
+          <div class="inpaint-controls">
+            <span class="ic-scope">적용 범위</span>
+            <button class="scope-btn active" data-mscope="this" type="button">이 프레임</button>
+            <button class="scope-btn" data-mscope="all" type="button">전체 프레임</button>
+            <button class="tune-btn save" id="mattePreviewBtn" type="button" style="margin-left:auto">미리보기</button>
+            <button class="tune-btn save" id="matteApplyBtn" type="button">적용</button>
+          </div>
+        </div>
+        </div><!-- /fluxcol -->
+        </div><!-- /tune-lower -->
+      </div>
+      <div class="tune-foot">
+        <button class="tune-btn reset" id="tuneReset" type="button">초기화</button>
+        <button class="tune-btn save"  id="tuneSave"  type="button">저장</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="thumb-zoom" id="thumbZoom" hidden><img id="thumbZoomImg" alt=""><span class="zn" id="thumbZoomN"></span></div>
+
+<script>
+/* ===========================================================
+   Shared
+   =========================================================== */
+const ALL_ACTIONS = ['idle','eat','happy','sad','sleep','surprise','talk','hurt','skill','win'];
+const FAMILY_KO = {
+  joy: '기쁨', food: '식탐', defense: '방어', fire: '불', light: '빛',
+  nature: '자연', sadness: '슬픔', shadow: '그림자', sky: '하늘',
+  sleep: '수면', smart: '지혜', trick: '장난', water: '물',
+};
+const PASSIVE_KO = {
+  happiness_recovery: '행복 회복', energy_recovery_bonus: '수면 회복',
+  cleanliness_boost: '청결 보너스', attack_boost: '공격력',
+  defense_boost: '방어력', evasion_boost: '회피',
+  food_drop_rate: '음식 드롭', rare_drop_rate: '레어 드롭',
+  hunger_decay_reduction: '배고픔 감소완화', health_recovery: '체력 회복',
+};
+const STAGE_KO = { baby: '새싹몬', teen: '잎새몬', adult: '푸른잎새몬', sandmon: '모래몬', rockmon: '돌갑몬', terramon: '대지갑몬', nova: '노바', quasar: '퀘이사', galaxia: '갤럭시아', egg: '알' };
+let manifest = null;
+let monsters = [];
+let tuning = { pet: {}, monster: {} };
+// --- Multi-project (atlas project switcher + shared library) ---
+let PROJECTS = [];                 // [{id,name,base,shared?}]
+let ACTIVE_PROJECT = 'demo';
+let CHAR_BASE = { pets: {}, monsters: {}, bosses: {} };  // {cat:{charId: '/static/<base>'}}
+// URL prefix for a character's sprites (project-aware; falls back to legacy path)
+function spriteRoot(folder, base) {
+  return (CHAR_BASE[folder] && CHAR_BASE[folder][base]) || '/static/sprites';
+}
+
+/* ===========================================================
+   Tuning modal — click any card to open
+   =========================================================== */
+let tuneCtx = null;       // {category, base, action, frameCount}
+let tunePreviewTimer = null;
+
+function getTune(cat, base, action) {
+  return (tuning[cat]?.[base]?.[action]) || {};
+}
+
+function openTune(category, base, action, frameCount) {
+  tuneCtx = { category, base, action, frameCount };
+  const t = getTune(category, base, action);
+  const scale = (t.scale != null) ? t.scale : 1.0;
+  const offX  = (t.offset_x != null) ? t.offset_x : 0;
+  const offY  = (t.offset_y != null) ? t.offset_y : 0;
+  const start = (t.frame_start != null) ? t.frame_start : 1;
+  const end   = (t.frame_end   != null) ? t.frame_end   : frameCount;
+  document.getElementById('tuneTitle').textContent = `${base} / ${action}`;
+  document.getElementById('tuneTag').textContent   = `${frameCount} frames`;
+  const sc = document.getElementById('tuneScale');
+  const ox = document.getElementById('tuneOffX');
+  const oy = document.getElementById('tuneOffY');
+  const st = document.getElementById('tuneStart');
+  const ed = document.getElementById('tuneEnd');
+  sc.value = scale;
+  ox.value = offX;
+  oy.value = offY;
+  st.min = 1; st.max = frameCount; st.value = start;
+  ed.min = 1; ed.max = frameCount; ed.value = end;
+  document.getElementById('tuneScaleVal').textContent = (+scale).toFixed(2) + '×';
+  document.getElementById('tuneOffXVal').textContent  = offX + 'px';
+  document.getElementById('tuneOffYVal').textContent  = offY + 'px';
+  document.getElementById('tuneStartVal').textContent = start;
+  document.getElementById('tuneEndVal').textContent   = end;
+  _tuneRemoved = new Set(Array.isArray(t.frames_removed) ? t.frames_removed : []);
+  // Edge-fade state from saved config
+  const ef = (t.edge_fade && typeof t.edge_fade === 'object') ? t.edge_fade : {};
+  _tuneFade = { type: ef.type || 'none', amount: (ef.amount != null ? ef.amount : 30) };
+  _syncFadeUI();
+  // All sections are always visible now (wide multi-column, no toggles).
+  _cfCenter = 1; _lastInpaintFrame = -1; _scrubMode = false;
+  _stopScrubPlay(); _cfStopPlay();
+  _cfInit(frameCount);   // build/render the Cover Flow frame browser
+  _updRemovedCount();
+  _initInpaint();        // ComfyUI status + mask stage + variant gallery (uses _cfCenter)
+  _initMatte();
+  document.getElementById('tuneOverlay').hidden = false;
+  startTunePreview();    // sidebar preview autoplays the action
+}
+
+function _tuneTransformStr() {
+  const sc = +document.getElementById('tuneScale').value;
+  const ox = +document.getElementById('tuneOffX').value;
+  const oy = +document.getElementById('tuneOffY').value;
+  return `translate(${ox}px, ${oy}px) scale(${sc})`;
+}
+
+let _tuneRemoved = new Set();
+let _scrubMode = false;
+let _scrubPlayTimer = null;
+let _tuneFade = { type: 'none', amount: 30 };
+
+// Build CSS mask declarations for an edge fade config (mirrors app.js).
+function edgeFadeCss(ef) {
+  if (!ef || ef.type === 'none' || !ef.type) return '';
+  const a = Math.max(0, Math.min(60, +ef.amount || 0));
+  if (a <= 0) return '';
+  if (ef.type === 'circle') {
+    const img = `radial-gradient(circle, #000 ${100 - a}%, transparent 100%)`;
+    return `-webkit-mask-image:${img};mask-image:${img}`;
+  }
+  if (ef.type === 'rect') {
+    const g = `linear-gradient(to right, transparent 0%, #000 ${a}%, #000 ${100 - a}%, transparent 100%), linear-gradient(to bottom, transparent 0%, #000 ${a}%, #000 ${100 - a}%, transparent 100%)`;
+    return `-webkit-mask-image:${g};-webkit-mask-composite:source-in;mask-image:${g};mask-composite:intersect`;
+  }
+  return '';
+}
+
+// Apply the current _tuneFade as a live mask on the preview image.
+function _applyPreviewFade() {
+  const img = document.getElementById('tunePreview');
+  if (!img) return;
+  // Clear first
+  img.style.webkitMaskImage = ''; img.style.maskImage = '';
+  img.style.webkitMaskComposite = ''; img.style.maskComposite = '';
+  const a = Math.max(0, Math.min(60, _tuneFade.amount || 0));
+  if (_tuneFade.type === 'circle' && a > 0) {
+    const m = `radial-gradient(circle, #000 ${100 - a}%, transparent 100%)`;
+    img.style.webkitMaskImage = m; img.style.maskImage = m;
+  } else if (_tuneFade.type === 'rect' && a > 0) {
+    const m = `linear-gradient(to right, transparent 0%, #000 ${a}%, #000 ${100 - a}%, transparent 100%), linear-gradient(to bottom, transparent 0%, #000 ${a}%, #000 ${100 - a}%, transparent 100%)`;
+    img.style.webkitMaskImage = m; img.style.maskImage = m;
+    img.style.webkitMaskComposite = 'source-in'; img.style.maskComposite = 'intersect';
+  }
+}
+
+// Sync the fade type buttons / amount slider / labels to _tuneFade, then preview.
+function _syncFadeUI() {
+  const LABEL = { none: '없음', rect: '네모', circle: '동그라미' };
+  document.querySelectorAll('.fade-type').forEach(b => {
+    b.classList.toggle('active', b.dataset.fade === _tuneFade.type);
+  });
+  document.getElementById('tuneFadeVal').textContent =
+    _tuneFade.type === 'none' ? '없음' : `${LABEL[_tuneFade.type]} ${_tuneFade.amount}%`;
+  const amtRow = document.getElementById('tuneFadeAmountRow');
+  amtRow.hidden = (_tuneFade.type === 'none');
+  const amt = document.getElementById('tuneFadeAmount');
+  amt.value = _tuneFade.amount;
+  document.getElementById('tuneFadeAmountVal').textContent = _tuneFade.amount + '%';
+  _applyPreviewFade();
+}
+
+function _updRemovedCount() {
+  const el = document.getElementById('tuneRemovedCnt');
+  if (el) el.textContent = String(_tuneRemoved.size);
+  if (typeof _cfUpdExcludeBtn === 'function') _cfUpdExcludeBtn();
+}
+
+function _updRemoveBtnState() {
+  const btn = document.getElementById('tuneScrubRemove');
+  if (!btn) return;
+  const slider = document.getElementById('tuneScrubSlider');
+  const f = +slider.value;
+  const removed = _tuneRemoved.has(f);
+  btn.classList.toggle('is-removed', removed);
+  btn.textContent = removed ? '↺ 이 프레임 복원' : '✕ 이 프레임 제외';
+}
+
+function _updScrubMarks() {
+  const marks = document.getElementById('tuneScrubMarks');
+  if (!marks || !tuneCtx) return;
+  marks.innerHTML = '';
+  const fc = Math.max(1, tuneCtx.frameCount - 1);
+  for (const f of _tuneRemoved) {
+    const m = document.createElement('div');
+    m.className = 'mark';
+    m.style.left = (((f - 1) / fc) * 100).toFixed(2) + '%';
+    m.title = 'f' + f;
+    marks.appendChild(m);
+  }
+}
+
+// Render the current scrub-slider frame into the scrub preview (col 2).
+function _renderScrubFrame() {
+  if (!tuneCtx) return;
+  const f = +document.getElementById('tuneScrubSlider').value;
+  document.getElementById('scrubPreview').src = _framePath(f);
+  document.getElementById('tuneScrubVal').textContent = String(f);
+  _updRemoveBtnState();
+  _syncThumbStates();
+  // Follow the scrub frame in the inpaint section. Reset the mask + gallery
+  // only on a deliberate scrub (frame changed AND not autoplaying).
+  if (f !== _lastInpaintFrame) {
+    _lastInpaintFrame = f;
+    const ifr = document.getElementById('inpaintFrame'); if (ifr) ifr.src = _framePath(f);
+    if (!_scrubPlayTimer) {
+      if (_maskCtx) _maskCtx.clearRect(0, 0, MASK_RES, MASK_RES);
+      if (typeof _initGallery === 'function') _initGallery();
+    }
+  }
+}
+
+// ----- Frame thumbnail strip (scrub view): hover = magnify, click = exclude -----
+let _thumbIO = null;
+function _framePath(f) {
+  if (!tuneCtx) return '';
+  const { category, base, action } = tuneCtx;
+  const folder = category === 'pet' ? 'pets' : (category === 'monster' ? 'monsters' : 'bosses');
+  return `${spriteRoot(folder, base)}/${folder}/${base}/anims/${action}/f${f}.png`;
+}
+function _buildThumbs() {
+  const wrap = document.getElementById('tuneThumbs');
+  if (!wrap || !tuneCtx) return;
+  if (_thumbIO) { _thumbIO.disconnect(); _thumbIO = null; }
+  wrap.innerHTML = '';
+  // Lazy-load thumbs as they scroll into the strip (avoid 145 eager fetches).
+  _thumbIO = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        const img = e.target;
+        if (!img.src && img.dataset.src) img.src = img.dataset.src;
+        _thumbIO.unobserve(img);
+      }
+    });
+  }, { root: wrap, rootMargin: '120px' });
+  for (let f = 1; f <= tuneCtx.frameCount; f++) {
+    const t = document.createElement('div');
+    t.className = 'thumb' + (_tuneRemoved.has(f) ? ' removed' : '');
+    t.dataset.frame = f;
+    const img = document.createElement('img');
+    img.alt = 'f' + f; img.dataset.src = _framePath(f); img.decoding = 'async';
+    // Eager-load the first ~40 (the visible strip) so thumbs show even if the
+    // IntersectionObserver is throttled (backgrounded tab); lazy-load the rest.
+    if (f <= 40) img.src = img.dataset.src;
+    t.appendChild(img);
+    const n = document.createElement('span'); n.className = 'n'; n.textContent = f;
+    t.appendChild(n);
+    t.addEventListener('mouseenter', (ev) => _showThumbZoom(f, ev));
+    t.addEventListener('mousemove', _moveThumbZoom);
+    t.addEventListener('mouseleave', _hideThumbZoom);
+    t.addEventListener('click', () => _toggleThumbRemoved(f));
+    wrap.appendChild(t);
+    if (f > 40) _thumbIO.observe(img);
+  }
+  _syncThumbStates();
+}
+function _toggleThumbRemoved(f) {
+  if (_tuneRemoved.has(f)) _tuneRemoved.delete(f); else _tuneRemoved.add(f);
+  _updRemovedCount();   // refreshes marks + count + remove-btn + thumb states
+}
+function _syncThumbStates() {
+  const wrap = document.getElementById('tuneThumbs');
+  if (!wrap) return;
+  const cur = +document.getElementById('tuneScrubSlider').value;
+  wrap.querySelectorAll('.thumb').forEach(t => {
+    const f = +t.dataset.frame;
+    t.classList.toggle('removed', _tuneRemoved.has(f));
+    t.classList.toggle('cur', f === cur);
+  });
+}
+function _showThumbZoom(f, ev) {
+  const z = document.getElementById('thumbZoom');
+  document.getElementById('thumbZoomImg').src = _framePath(f);
+  document.getElementById('thumbZoomN').textContent = 'f' + f;
+  z.hidden = false;
+  _moveThumbZoom(ev);
+}
+function _moveThumbZoom(ev) {
+  const z = document.getElementById('thumbZoom');
+  if (z.hidden) return;
+  const pad = 16, w = 224, h = 224;
+  let x = ev.clientX + pad, y = ev.clientY - h - pad;
+  if (x + w > window.innerWidth) x = ev.clientX - w - pad;
+  if (y < 4) y = ev.clientY + pad;
+  z.style.left = Math.max(4, x) + 'px';
+  z.style.top = Math.max(4, y) + 'px';
+}
+function _hideThumbZoom() {
+  const z = document.getElementById('thumbZoom');
+  if (z) z.hidden = true;
+}
+
+// ===== Cover Flow frame browser (center frame + perspective side carousel) =====
+let _cfCenter = 1, _cfTotal = 1, _cfPool = [], _cfPlayTimer = null;
+const CF_WIN = 5, CF_SP = 74;   // pool window each side, px spacing per step
+function _cfTransform(o) {
+  // translateY -50% centers the frame vertically (reflection removed → no top clip).
+  if (o === 0) return 'translate(-50%, -50%) translateZ(70px) rotateY(0deg) scale(1)';
+  const dir = o < 0 ? 1 : -1;
+  // Separate translateX (signed px is valid) instead of calc(-50% + -Npx),
+  // which is invalid CSS and silently drops the transform on the left side.
+  return `translate(-50%, -50%) translateX(${o * CF_SP}px) rotateY(${dir * 48}deg) scale(0.76)`;
+}
+function _cfBuildPool() {
+  const stage = document.getElementById('cfStage'); if (!stage) return;
+  stage.innerHTML = ''; _cfPool = [];
+  for (let i = -CF_WIN; i <= CF_WIN; i++) {
+    const el = document.createElement('div'); el.className = 'cf-item';
+    const img = document.createElement('img'); img.alt = ''; img.decoding = 'async';
+    el.appendChild(img);
+    el.addEventListener('click', () => { const fr = +el.dataset.frame; if (fr) { _cfStopPlay(); _cfSetCenter(fr); } });
+    stage.appendChild(el); _cfPool.push({ el, img, off: i });
+  }
+}
+function _cfRender() {
+  if (!tuneCtx) return;
+  for (const p of _cfPool) {
+    const frame = _cfCenter + p.off;
+    if (frame < 1 || frame > _cfTotal) { p.el.style.opacity = '0'; p.el.style.pointerEvents = 'none'; p.el.dataset.frame = ''; continue; }
+    p.el.dataset.frame = String(frame);
+    if (p.img.dataset.f !== String(frame)) { p.img.src = _framePath(frame); p.img.dataset.f = String(frame); }
+    p.el.style.opacity = '1'; p.el.style.pointerEvents = 'auto';
+    p.el.style.transform = _cfTransform(p.off);
+    p.el.style.zIndex = String(50 - Math.abs(p.off));
+    p.el.classList.toggle('center', p.off === 0);
+    p.el.classList.toggle('removed', _tuneRemoved.has(frame));
+  }
+  const n = document.getElementById('cfNum'); if (n) n.textContent = String(_cfCenter);
+  const sl = document.getElementById('cfSlider'); if (sl && +sl.value !== _cfCenter) sl.value = String(_cfCenter);
+  _cfUpdExcludeBtn();
+}
+function _cfSetCenter(frame) {
+  frame = Math.max(1, Math.min(_cfTotal, frame));
+  if (frame === _cfCenter) return;
+  _cfCenter = frame; _cfRender(); _onFrameChanged();
+}
+function _cfGo(d) { _cfSetCenter(_cfCenter + d); }
+function _cfInit(total) {
+  _cfTotal = Math.max(1, total); _cfCenter = 1;
+  const t = document.getElementById('cfTotal'); if (t) t.textContent = String(_cfTotal);
+  const sl = document.getElementById('cfSlider'); if (sl) { sl.min = '1'; sl.max = String(_cfTotal); sl.value = '1'; }
+  if (!_cfPool.length) _cfBuildPool();
+  _cfRender();
+}
+function _cfUpdExcludeBtn() {
+  const btn = document.getElementById('cfExclude'); if (!btn) return;
+  const rm = _tuneRemoved.has(_cfCenter);
+  btn.classList.toggle('is-removed', rm);
+  btn.textContent = rm ? '↺ 이 프레임 복원' : '✕ 이 프레임 제외';
+}
+function _cfExcludeToggle() {
+  if (_tuneRemoved.has(_cfCenter)) _tuneRemoved.delete(_cfCenter); else _tuneRemoved.add(_cfCenter);
+  _updRemovedCount(); _cfRender();
+}
+function _cfStopPlay() {
+  if (_cfPlayTimer) { clearInterval(_cfPlayTimer); _cfPlayTimer = null; }
+  const b = document.getElementById('cfPlay'); if (b) { b.classList.remove('is-playing'); b.textContent = '▶ 재생'; }
+}
+function _cfStartPlay() {
+  _cfStopPlay();
+  _cfPlayTimer = setInterval(() => { _cfCenter = _cfCenter >= _cfTotal ? 1 : _cfCenter + 1; _cfRender(); }, 125);
+  const b = document.getElementById('cfPlay'); if (b) { b.classList.add('is-playing'); b.textContent = '⏸ 정지'; }
+}
+function _onFrameChanged() {
+  // Sync the Flux mask reference + gallery to the new center frame.
+  const ifr = document.getElementById('inpaintFrame'); if (ifr) ifr.src = _framePath(_cfCenter);
+  if (typeof _setMaskShown === 'function') _setMaskShown(true);   // back to paint mode
+  if (!_cfPlayTimer) {
+    if (_maskCtx) _maskCtx.clearRect(0, 0, MASK_RES, MASK_RES);
+    if (typeof _initGallery === 'function') _initGallery();
+  }
+}
+function wireCoverflow() {
+  const byId = id => document.getElementById(id);
+  byId('cfPrev')?.addEventListener('click', () => { _cfStopPlay(); _cfGo(-1); });
+  byId('cfNext')?.addEventListener('click', () => { _cfStopPlay(); _cfGo(1); });
+  byId('cfPlay')?.addEventListener('click', () => { _cfPlayTimer ? _cfStopPlay() : _cfStartPlay(); });
+  byId('cfExclude')?.addEventListener('click', _cfExcludeToggle);
+  byId('cfSlider')?.addEventListener('input', (e) => { _cfStopPlay(); _cfSetCenter(+e.target.value); });
+  const cf = byId('coverflow');
+  if (cf) {
+    cf.addEventListener('wheel', (e) => { e.preventDefault(); _cfStopPlay(); _cfGo((e.deltaY + e.deltaX) > 0 ? 1 : -1); }, { passive: false });
+    let dx0 = null;
+    cf.addEventListener('pointerdown', (e) => { dx0 = e.clientX; _cfStopPlay(); });
+    cf.addEventListener('pointermove', (e) => { if (dx0 == null) return; const d = e.clientX - dx0; if (Math.abs(d) > 55) { _cfGo(d < 0 ? 1 : -1); dx0 = e.clientX; } });
+    cf.addEventListener('pointerup', () => { dx0 = null; });
+    cf.addEventListener('pointerleave', () => { dx0 = null; });
+  }
+  byId('tuneOverlay')?.addEventListener('keydown', (e) => {
+    if (byId('tuneOverlay').hidden) return;
+    const tag = (e.target.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'textarea') return;
+    if (e.key === 'ArrowLeft') { e.preventDefault(); _cfStopPlay(); _cfGo(-1); }
+    else if (e.key === 'ArrowRight') { e.preventDefault(); _cfStopPlay(); _cfGo(1); }
+  });
+}
+
+// ----- Flux Kontext masked inpaint -----
+let _maskCtx = null, _painting = false, _eraser = false, _brush = 48;
+let _fluxModel = 'fill';   // 'fill' (FLUX Fill inpaint) | 'kontext'
+let _inpaintScope = 'this', _lastEdit = null;
+let _galItems = [], _galSel = 0;   // Flux variant gallery (item 0 = 원본)
+let _lastInpaintFrame = -1;        // track scrub frame for inpaint sync
+const MASK_RES = 512;   // paint at native frame res for a clean mask
+
+function _inpaintFrameNum() { return _cfCenter; }   // current = Cover Flow center frame
+function _initInpaint() {   // section is always visible now — just (re)initialise
+  _checkComfy();
+  _loadInpaintFrame();
+  _initGallery();
+}
+async function _checkComfy() {
+  const el = document.getElementById('inpaintStatus');
+  el.textContent = 'ComfyUI 확인 중…'; el.className = 'inpaint-status';
+  try {
+    const j = await (await fetch('/api/flux/status')).json();
+    if (j.running) { el.textContent = '● ComfyUI 연결됨 (첫 생성 시 모델 로드 ~1-2분)'; el.className = 'inpaint-status ok'; }
+    else { el.textContent = '○ ComfyUI 꺼짐 — comfyui/run_comfyui.bat 실행 필요'; el.className = 'inpaint-status bad'; }
+  } catch (e) { el.textContent = '상태 확인 실패'; el.className = 'inpaint-status bad'; }
+}
+function _loadInpaintFrame() {
+  if (!tuneCtx) return;
+  document.getElementById('inpaintFrame').src = _framePath(_inpaintFrameNum());
+  const cv = document.getElementById('maskCanvas');
+  cv.width = MASK_RES; cv.height = MASK_RES;
+  _maskCtx = cv.getContext('2d');
+  _maskCtx.clearRect(0, 0, MASK_RES, MASK_RES);
+  _setMaskShown(true);
+  _lastEdit = null;
+}
+function _maskXY(ev, cv) {
+  const r = cv.getBoundingClientRect();
+  return [(ev.clientX - r.left) / r.width * cv.width,
+          (ev.clientY - r.top) / r.height * cv.height];
+}
+function _paintDot(x, y) {
+  if (!_maskCtx) return;
+  _maskCtx.globalCompositeOperation = _eraser ? 'destination-out' : 'source-over';
+  _maskCtx.fillStyle = '#ffffff';
+  _maskCtx.beginPath(); _maskCtx.arc(x, y, _brush / 2, 0, Math.PI * 2); _maskCtx.fill();
+}
+function _exportMask() {
+  // White strokes composited onto black → clean grayscale mask PNG.
+  const cv = document.getElementById('maskCanvas');
+  const off = document.createElement('canvas'); off.width = MASK_RES; off.height = MASK_RES;
+  const o = off.getContext('2d');
+  o.fillStyle = '#000'; o.fillRect(0, 0, MASK_RES, MASK_RES);
+  o.drawImage(cv, 0, 0);
+  return off.toDataURL('image/png');
+}
+function _maskHasPaint() {
+  if (!_maskCtx) return false;
+  const d = _maskCtx.getImageData(0, 0, MASK_RES, MASK_RES).data;
+  for (let i = 3; i < d.length; i += 4) if (d[i] > 10) return true;
+  return false;
+}
+async function _genInpaint() {
+  if (!tuneCtx) return;
+  const el = document.getElementById('inpaintStatus');
+  const prompt = document.getElementById('inpaintPrompt').value.trim();
+  if (!prompt) { el.textContent = '프롬프트를 입력하세요'; el.className = 'inpaint-status bad'; return; }
+  if (!_maskHasPaint()) { el.textContent = '수정할 영역을 칠하세요'; el.className = 'inpaint-status bad'; return; }
+  const f = _inpaintFrameNum();
+  const seed = Math.floor(Math.random() * 100000);   // vary per gen → distinct variants
+  const btn = document.getElementById('inpaintGen');
+  btn.disabled = true; btn.classList.add('generating'); btn.textContent = '생성 중';
+  el.textContent = '생성 중… (첫 회는 모델 로드로 최대 1-2분)'; el.className = 'inpaint-status';
+  try {
+    const r = await fetch('/api/flux/edit', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ category: tuneCtx.category, base: tuneCtx.base, action: tuneCtx.action, frame: f, prompt, mask: _exportMask(), seed, model: _fluxModel }),
+    });
+    if (!r.ok) throw new Error((await r.text()).slice(0, 160));
+    const j = await r.json();
+    _addVariant(j.preview, j.out_file, prompt);   // append to gallery + auto-select newest
+    const n = _galItems.filter(it => it.kind === 'var').length;
+    el.textContent = `✓ 생성 #${n} — 갤러리에서 고르고 [선택 적용]`; el.className = 'inpaint-status ok';
+  } catch (e) { el.textContent = '생성 실패: ' + String(e.message || e).slice(0, 140); el.className = 'inpaint-status bad'; }
+  btn.disabled = false; btn.classList.remove('generating'); btn.textContent = '생성';
+}
+async function _applyInpaint() {   // apply the SELECTED gallery item (원본 = restore)
+  if (!tuneCtx) return;
+  const el = document.getElementById('inpaintStatus');
+  const sel = _galItems[_galSel];
+  const f = _inpaintFrameNum();
+  const btn = document.getElementById('inpaintApply'); btn.disabled = true;
+  try {
+    if (!sel || sel.kind === 'orig') {
+      await _restoreFrame();
+    } else {
+      el.textContent = _inpaintScope === 'all' ? '선택본으로 전체 적용 시작…' : '선택본 적용 중…'; el.className = 'inpaint-status';
+      const r = await fetch('/api/flux/apply', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ category: tuneCtx.category, base: tuneCtx.base, action: tuneCtx.action,
+          frame: f, prompt: sel.prompt || '', mask: _exportMask(),
+          scope: _inpaintScope, out_file: sel.out_file, seed: 42, model: _fluxModel }),
+      });
+      if (!r.ok) throw new Error((await r.text()).slice(0, 160));
+      const j = await r.json();
+      if (j.job_id) { _pollFluxJob(j.job_id); }
+      else { el.textContent = `✓ 적용됨 (프레임 ${(j.applied || []).join(',')})`; el.className = 'inpaint-status ok'; _bustFrame(f); }
+    }
+  } catch (e) { el.textContent = '적용 실패: ' + String(e.message || e).slice(0, 140); el.className = 'inpaint-status bad'; }
+  btn.disabled = false;
+}
+function _pollFluxJob(id) {
+  const el = document.getElementById('inpaintStatus');
+  const tick = async () => {
+    try {
+      const j = await (await fetch('/api/flux/job/' + id)).json();
+      el.textContent = `전체 적용 ${j.done}/${j.total}…`; el.className = 'inpaint-status';
+      if (j.state === 'done') {
+        el.textContent = `✓ 전체 적용 완료 ${j.done}/${j.total}` + (j.errors && j.errors.length ? ` (오류 ${j.errors.length})` : '');
+        el.className = 'inpaint-status ok';
+        _bustFrame(_inpaintFrameNum());
+        return;
+      }
+    } catch (e) {}
+    setTimeout(tick, 2000);
+  };
+  tick();
+}
+function _bustFrame(f) {
+  // Refresh the edited frame everywhere it's shown.
+  const bust = _framePath(f) + '?e=' + Date.now();
+  const fr = document.getElementById('inpaintFrame'); if (fr) fr.src = bust;
+  const sp = document.getElementById('scrubPreview'); if (sp) sp.src = bust;
+}
+// ----- Flux variant gallery (item 0 = 원본, rest = generated variants) -----
+function _initGallery() {
+  if (!tuneCtx) return;
+  const f = _inpaintFrameNum();
+  _galItems = [{ kind: 'orig', src: _framePath(f) + '?e=' + Date.now() }];
+  _galSel = 0; _renderGallery();
+  // Load the pristine original (backup if the frame was already edited).
+  fetch(`/api/frame/original?category=${tuneCtx.category}&base=${tuneCtx.base}&action=${tuneCtx.action}&frame=${f}`)
+    .then(r => r.json())
+    .then(j => { if (_galItems[0] && _galItems[0].kind === 'orig' && j.image) { _galItems[0].src = j.image; _renderGallery(); } })
+    .catch(() => {});
+}
+function _addVariant(preview, out_file, prompt) {
+  _galItems.push({ kind: 'var', src: preview, out_file, prompt });
+  _galSel = _galItems.length - 1; _renderGallery();
+  _showGalleryInStage(_galSel);   // auto-show the new result big (no need to apply to see it)
+}
+// Toggle the mask overlay on the big preview (hide it while previewing a generated result).
+function _setMaskShown(show) {
+  const cv = document.getElementById('maskCanvas');
+  if (cv) { cv.style.opacity = show ? '' : '0'; cv.style.pointerEvents = show ? '' : 'none'; }
+}
+// Show a gallery item large in the top preview frame. Variant → hide mask (clean view);
+// 원본 → restore the editable frame + mask (back to paint mode).
+function _showGalleryInStage(i) {
+  const it = _galItems[i]; if (!it) return;
+  const fr = document.getElementById('inpaintFrame'); if (fr && it.src) fr.src = it.src;
+  _setMaskShown(it.kind === 'orig');
+  const el = document.getElementById('inpaintStatus');
+  if (el) {
+    if (it.kind === 'orig') { el.textContent = '원본 — 칠하고 생성하세요'; el.className = 'inpaint-status'; }
+    else { el.textContent = `변형 #${i} 미리보기 (크게) — 마음에 들면 [선택 적용], 다시 그리려면 원본 클릭`; el.className = 'inpaint-status ok'; }
+  }
+}
+function _renderGallery() {
+  const g = document.getElementById('fluxGallery'); if (!g) return;
+  g.innerHTML = '';
+  _galItems.forEach((it, i) => {
+    const d = document.createElement('div');
+    d.className = 'gal-item' + (i === _galSel ? ' sel' : '') + (it.kind === 'orig' ? ' orig' : '');
+    const img = document.createElement('img'); img.src = it.src; img.alt = '';
+    const gl = document.createElement('span'); gl.className = 'gl'; gl.textContent = it.kind === 'orig' ? '원본' : '#' + i;
+    d.appendChild(img); d.appendChild(gl);
+    d.addEventListener('click', () => { _galSel = i; _renderGallery(); _showGalleryInStage(i); });
+    g.appendChild(d);
+  });
+}
+async function _restoreFrame() {
+  if (!tuneCtx) return;
+  const el = document.getElementById('inpaintStatus'); const f = _inpaintFrameNum();
+  el.textContent = '원본 복원 중…'; el.className = 'inpaint-status';
+  const r = await fetch('/api/frame/restore', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ category: tuneCtx.category, base: tuneCtx.base, action: tuneCtx.action, frame: f, scope: _inpaintScope }) });
+  if (!r.ok) throw new Error((await r.text()).slice(0, 160));
+  const j = await r.json();
+  el.textContent = `✓ 원본 복원 (${j.count}프레임)`; el.className = 'inpaint-status ok';
+  _bustFrame(f);
+}
+function wireInpaint() {
+  const cv = document.getElementById('maskCanvas');
+  cv.addEventListener('pointerdown', (e) => { _painting = true; try { cv.setPointerCapture(e.pointerId); } catch (_) {} const [x, y] = _maskXY(e, cv); _paintDot(x, y); });
+  cv.addEventListener('pointermove', (e) => { if (!_painting) return; const [x, y] = _maskXY(e, cv); _paintDot(x, y); });
+  cv.addEventListener('pointerup', () => { _painting = false; });
+  cv.addEventListener('pointercancel', () => { _painting = false; });
+  document.getElementById('brushSize').addEventListener('input', (e) => { _brush = +e.target.value; });
+  document.getElementById('brushEraser').addEventListener('click', (e) => { _eraser = !_eraser; e.currentTarget.classList.toggle('active', _eraser); });
+  document.getElementById('brushClear').addEventListener('click', () => { if (_maskCtx) _maskCtx.clearRect(0, 0, MASK_RES, MASK_RES); });
+  document.querySelectorAll('.scope-btn[data-scope]').forEach(b =>
+    b.addEventListener('click', () => { _inpaintScope = b.dataset.scope; document.querySelectorAll('.scope-btn[data-scope]').forEach(x => x.classList.toggle('active', x === b)); }));
+  document.querySelectorAll('[data-fluxmodel]').forEach(b =>
+    b.addEventListener('click', () => { _fluxModel = b.dataset.fluxmodel; document.querySelectorAll('[data-fluxmodel]').forEach(x => x.classList.toggle('active', x === b)); }));
+  document.getElementById('inpaintGen').addEventListener('click', _genInpaint);
+  document.getElementById('inpaintApply').addEventListener('click', _applyInpaint);
+  document.getElementById('inpaintRestore').addEventListener('click', () => _restoreFrame().catch(e => {
+    const el = document.getElementById('inpaintStatus');
+    el.textContent = '복원 실패: ' + String(e.message || e).slice(0, 140); el.className = 'inpaint-status bad';
+  }));
+}
+
+// ----- Re-matte (InSPyReNet background removal) — button-only, no mask -----
+let _matteScope = 'this', _matteOut = null;
+function _matteFrameNum() { return _cfCenter; }   // current = Cover Flow center frame
+function _initMatte() {
+  const mr = document.getElementById('matteResult'); if (mr) mr.hidden = true;
+  _matteOut = null;
+}
+async function _mattePreview() {
+  if (!tuneCtx) return;
+  const f = _matteFrameNum(), el = document.getElementById('matteStatus');
+  const btn = document.getElementById('mattePreviewBtn'); btn.disabled = true;
+  el.textContent = '누끼 추출 중… (첫 회 모델 다운로드 시 ~1분)'; el.className = 'inpaint-status';
+  try {
+    const r = await fetch('/api/matte/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ category: tuneCtx.category, base: tuneCtx.base, action: tuneCtx.action, frame: f }) });
+    if (!r.ok) throw new Error((await r.text()).slice(0, 160));
+    const j = await r.json();
+    document.getElementById('mBefore').src = _framePath(f);
+    document.getElementById('mAfter').src = j.preview;
+    document.getElementById('matteResult').hidden = false;
+    _matteOut = { frame: f, out_file: j.out_file };
+    el.textContent = '✓ 누끼 완료 — 체커=투명. [적용]으로 저장'; el.className = 'inpaint-status ok';
+  } catch (e) { el.textContent = '실패: ' + String(e.message || e).slice(0, 140); el.className = 'inpaint-status bad'; }
+  btn.disabled = false;
+}
+async function _matteApply() {
+  if (!tuneCtx) return;
+  const f = _matteFrameNum(), el = document.getElementById('matteStatus');
+  const btn = document.getElementById('matteApplyBtn'); btn.disabled = true;
+  el.textContent = _matteScope === 'all' ? '전체 누끼 시작…' : '적용 중…'; el.className = 'inpaint-status';
+  const body = { category: tuneCtx.category, base: tuneCtx.base, action: tuneCtx.action, frame: f, scope: _matteScope };
+  if (_matteScope === 'this' && _matteOut && _matteOut.frame === f) body.out_file = _matteOut.out_file;
+  try {
+    const r = await fetch('/api/matte/apply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (!r.ok) throw new Error((await r.text()).slice(0, 160));
+    const j = await r.json();
+    if (j.job_id) { _pollMatteJob(j.job_id); }
+    else { el.textContent = `✓ 적용됨 (프레임 ${(j.applied || []).join(',')})`; el.className = 'inpaint-status ok'; _bustFrame(f); }
+  } catch (e) { el.textContent = '적용 실패: ' + String(e.message || e).slice(0, 140); el.className = 'inpaint-status bad'; }
+  btn.disabled = false;
+}
+function _pollMatteJob(id) {
+  const el = document.getElementById('matteStatus');
+  const tick = async () => {
+    try {
+      const j = await (await fetch('/api/matte/job/' + id)).json();
+      el.textContent = `전체 누끼 ${j.done || 0}/${j.total || '?'}…`; el.className = 'inpaint-status';
+      if (j.state === 'done') {
+        el.textContent = `✓ 전체 누끼 완료 ${j.done}/${j.total}` + (j.message && j.message !== 'errors=0' ? ` (${j.message})` : '');
+        el.className = 'inpaint-status ok'; _bustFrame(_matteFrameNum()); return;
+      }
+      if (j.state === 'error') { el.textContent = '실패: ' + (j.message || ''); el.className = 'inpaint-status bad'; return; }
+    } catch (e) {}
+    setTimeout(tick, 2000);
+  };
+  tick();
+}
+function wireMatte() {
+  document.querySelectorAll('.scope-btn[data-mscope]').forEach(b =>
+    b.addEventListener('click', () => { _matteScope = b.dataset.mscope; document.querySelectorAll('.scope-btn[data-mscope]').forEach(x => x.classList.toggle('active', x === b)); }));
+  document.getElementById('mattePreviewBtn').addEventListener('click', _mattePreview);
+  document.getElementById('matteApplyBtn').addEventListener('click', _matteApply);
+}
+
+function _stopScrubPlay() {
+  if (_scrubPlayTimer) { clearInterval(_scrubPlayTimer); _scrubPlayTimer = null; }
+  const btn = document.getElementById('tuneScrubPlay');
+  if (btn) { btn.classList.remove('is-playing'); btn.textContent = '▶ 재생'; }
+}
+function _startScrubPlay() {
+  _stopScrubPlay();
+  const slider = document.getElementById('tuneScrubSlider');
+  const max = +slider.max;
+  // 12fps: slow enough that the eye can catch jitter, fast enough to feel
+  // like motion. Tap-step (◀/▶) is for single-frame inspection.
+  _scrubPlayTimer = setInterval(() => {
+    let v = +slider.value + 1;
+    if (v > max) v = +slider.min;
+    slider.value = v;
+    _renderScrubFrame();
+  }, Math.round(1000/12));
+  const btn = document.getElementById('tuneScrubPlay');
+  if (btn) { btn.classList.add('is-playing'); btn.textContent = '⏸ 정지'; }
+}
+
+function closeTune() {
+  document.getElementById('tuneOverlay').hidden = true;
+  if (tunePreviewTimer) { clearInterval(tunePreviewTimer); tunePreviewTimer = null; }
+  _stopScrubPlay(); _cfStopPlay();
+  _hideThumbZoom();
+  if (_thumbIO) { _thumbIO.disconnect(); _thumbIO = null; }
+  const _tw = document.getElementById('tuneThumbs'); if (_tw) _tw.innerHTML = '';
+  _lastEdit = null; _galItems = []; _galSel = 0;
+  _tuneRemoved = new Set();
+  _scrubMode = false;
+  tuneCtx = null;
+}
+function startTunePreview() {
+  if (!tuneCtx) return;
+  // Col-1 preview always autoplays the action (scrub has its own preview now).
+  const { category, base, action } = tuneCtx;
+  const folder = category === 'pet' ? 'pets' : (category === 'monster' ? 'monsters' : 'bosses');
+  const img = document.getElementById('tunePreview');
+  img.style.transform = _tuneTransformStr();
+  img.style.transformOrigin = '50% 80%';
+  if (tunePreviewTimer) clearInterval(tunePreviewTimer);
+  let idx = +document.getElementById('tuneStart').value;
+  const fps = 24;
+  const tick = () => {
+    const s = +document.getElementById('tuneStart').value;
+    const e = +document.getElementById('tuneEnd').value;
+    // Advance idx until it lands on a non-removed frame within [s..e]
+    let safety = e - s + 2;
+    while (safety-- > 0 && (_tuneRemoved.has(idx) || idx < s || idx > e)) {
+      idx = (idx >= e) ? s : (idx + 1);
+    }
+    img.src = `${spriteRoot(folder, base)}/${folder}/${base}/anims/${action}/f${idx}.png`;
+    idx = (idx >= e) ? s : (idx + 1);
+  };
+  tick();
+  tunePreviewTimer = setInterval(tick, 1000/fps);
+}
+function wireTune() {
+  const sc = document.getElementById('tuneScale');
+  const ox = document.getElementById('tuneOffX');
+  const oy = document.getElementById('tuneOffY');
+  const st = document.getElementById('tuneStart');
+  const ed = document.getElementById('tuneEnd');
+  const updTransform = () => {
+    document.getElementById('tunePreview').style.transform = _tuneTransformStr();
+  };
+  sc.addEventListener('input', () => {
+    document.getElementById('tuneScaleVal').textContent = (+sc.value).toFixed(2) + '×';
+    updTransform();
+  });
+  ox.addEventListener('input', () => {
+    document.getElementById('tuneOffXVal').textContent = ox.value + 'px';
+    updTransform();
+  });
+  oy.addEventListener('input', () => {
+    document.getElementById('tuneOffYVal').textContent = oy.value + 'px';
+    updTransform();
+  });
+  st.addEventListener('input', () => {
+    if (+st.value > +ed.value) ed.value = st.value;
+    document.getElementById('tuneStartVal').textContent = st.value;
+    document.getElementById('tuneEndVal').textContent   = ed.value;
+  });
+  ed.addEventListener('input', () => {
+    if (+ed.value < +st.value) st.value = ed.value;
+    document.getElementById('tuneStartVal').textContent = st.value;
+    document.getElementById('tuneEndVal').textContent   = ed.value;
+  });
+  // Edge-fade: type buttons + amount slider, live preview.
+  document.querySelectorAll('.fade-type').forEach(b => {
+    b.addEventListener('click', () => {
+      _tuneFade.type = b.dataset.fade;
+      _syncFadeUI();
+    });
+  });
+  document.getElementById('tuneFadeAmount').addEventListener('input', (e) => {
+    _tuneFade.amount = +e.target.value;
+    document.getElementById('tuneFadeAmountVal').textContent = _tuneFade.amount + '%';
+    document.getElementById('tuneFadeVal').textContent =
+      (_tuneFade.type === 'none' ? '없음' : `${ {rect:'네모',circle:'동그라미'}[_tuneFade.type] } ${_tuneFade.amount}%`);
+    _applyPreviewFade();
+  });
+
+  // (old scrub slider / thumbnail wiring removed — replaced by Cover Flow, wired in wireCoverflow())
+  document.getElementById('tuneClose').addEventListener('click', closeTune);
+  document.getElementById('tuneOverlay').addEventListener('click', (e) => {
+    if (e.target.id === 'tuneOverlay') closeTune();
+  });
+  document.getElementById('tuneReset').addEventListener('click', () => {
+    if (!tuneCtx) return;
+    sc.value = 1.0; ox.value = 0; oy.value = 0;
+    st.value = 1; ed.value = tuneCtx.frameCount;
+    _tuneRemoved.clear();
+    _tuneFade = { type: 'none', amount: 30 };
+    _syncFadeUI();
+    document.getElementById('tuneScaleVal').textContent = '1.00×';
+    document.getElementById('tuneOffXVal').textContent  = '0px';
+    document.getElementById('tuneOffYVal').textContent  = '0px';
+    document.getElementById('tuneStartVal').textContent = '1';
+    document.getElementById('tuneEndVal').textContent   = String(tuneCtx.frameCount);
+    _updRemovedCount();
+    updTransform();
+  });
+  document.getElementById('tuneSave').addEventListener('click', async () => {
+    if (!tuneCtx) return;
+    const body = {
+      category: tuneCtx.category, base: tuneCtx.base, action: tuneCtx.action,
+      scale: +sc.value,
+      offset_x: +ox.value,
+      offset_y: +oy.value,
+      frame_start: +st.value,
+      frame_end: +ed.value,
+      frame_total: tuneCtx.frameCount,
+      frames_removed: Array.from(_tuneRemoved).sort((a,b)=>a-b),
+      edge_fade: { type: _tuneFade.type, amount: _tuneFade.amount },
+    };
+    const btn = document.getElementById('tuneSave');
+    btn.disabled = true; btn.textContent = '저장 중…';
+    try {
+      const r = await fetch('/api/sprite-tuning', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+      if (!r.ok) throw new Error(await r.text());
+      const j = await r.json();
+      tuning[tuneCtx.category] = tuning[tuneCtx.category] || {};
+      tuning[tuneCtx.category][tuneCtx.base] = tuning[tuneCtx.category][tuneCtx.base] || {};
+      tuning[tuneCtx.category][tuneCtx.base][tuneCtx.action] = j.tuning;
+      btn.textContent = '✓ 저장됨';
+      // Re-render the panel that contains this card so the on-card preview
+      // picks up the new scale/offset/frame range. tuneCtx.category is the
+      // tuning category ("pet"/"monster"); panel render funcs handle their own.
+      const ctxCat = tuneCtx.category;
+      setTimeout(() => {
+        btn.disabled = false; btn.textContent = '저장';
+        closeTune();
+        if (ctxCat === 'pet') renderPet(currentStage);
+        else if (ctxCat === 'monster') renderMonster();
+      }, 700);
+    } catch (e) {
+      btn.disabled = false; btn.textContent = '저장';
+      alert('저장 실패: ' + e.message);
+    }
+  });
+}
+
+/* ===========================================================
+   Preview backdrop — user-selectable sprite/fade background.
+   Edge-fade is an alpha (transparency) mask, so it only reads as a
+   "fade-out" against a real backdrop. Default #fff matches the in-game
+   card; 'checker' reveals the true transparency. Persisted in localStorage.
+   =========================================================== */
+const PVBG_KEY = 'atlasPreviewBg';
+const PVBG_LABEL = { '#ffffff':'게임 흰색', '#fafaf7':'연회색', '#0e0e14':'어두움', 'checker':'체커(투명)' };
+function applyPreviewBg(val) {
+  val = val || '#ffffff';
+  const checker = (val === 'checker');
+  document.body.classList.toggle('preview-checker', checker);
+  if (!checker) document.documentElement.style.setProperty('--preview-bg', val);
+  document.querySelectorAll('.pvbg-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.bg === val));
+  const valEl = document.getElementById('pvbgVal');
+  if (valEl) valEl.textContent = PVBG_LABEL[val] || val;
+  const custom = document.getElementById('pvbgCustom');
+  if (custom && !checker && /^#[0-9a-fA-F]{6}$/.test(val)) custom.value = val;
+  try { localStorage.setItem(PVBG_KEY, val); } catch (_) {}
+}
+function wirePreviewBg() {
+  document.querySelectorAll('.pvbg-btn').forEach(b =>
+    b.addEventListener('click', () => applyPreviewBg(b.dataset.bg)));
+  const custom = document.getElementById('pvbgCustom');
+  if (custom) custom.addEventListener('input', () => applyPreviewBg(custom.value));
+  let saved = '#ffffff';
+  try { saved = localStorage.getItem(PVBG_KEY) || '#ffffff'; } catch (_) {}
+  applyPreviewBg(saved);
+}
+
+function log(msg) {
+  const el = document.getElementById('log');
+  el.textContent += `[${new Date().toLocaleTimeString()}] ${msg}\n`;
+  el.scrollTop = el.scrollHeight;
+}
+function rarityStars(n) { return '★'.repeat(n) + '☆'.repeat(Math.max(0, 5 - n)); }
+
+/* ===========================================================
+   Nav (categories)
+   =========================================================== */
+document.querySelectorAll('.nav-tab').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.toggle('active', t === b));
+  document.querySelectorAll('.panel').forEach(p =>
+    p.classList.toggle('active', p.id === 'panel-' + b.dataset.cat));
+  // Re-render the now-visible panel so flipbooks re-register (clearFlipbooks
+  // is global, so switching tabs must rebuild the panel that's coming back).
+  if (b.dataset.cat === 'pet') renderPet(currentStage);
+  else if (b.dataset.cat === 'monster') renderMonster();
+}));
+
+/* ===========================================================
+   PET panel
+   =========================================================== */
+let currentStage = 'baby';
+let pendingMap = {};   // current name → new name (per stage)
+
+// --- Multi-project: dynamic pet pills (from manifest) + project bar ---
+function renderPetPills() {
+  const wrap = document.getElementById('petPills');
+  if (!wrap) return;
+  const chars = (manifest.pets && manifest.pets.characters) || {};
+  const ids = Object.keys(chars).sort((a, b) => a.localeCompare(b));
+  if (!ids.includes(currentStage)) currentStage = ids[0] || '';
+  wrap.innerHTML = '';
+  for (const id of ids) {
+    const shared = !!chars[id]._shared;
+    const b = document.createElement('button');
+    b.className = 'pill' + (id === currentStage ? ' active' : '') + (shared ? ' is-shared' : '');
+    b.dataset.stage = id;
+    const ko = STAGE_KO[id];
+    b.innerHTML = (ko ? `${ko} (${id})` : id) + (shared ? '<span class="shared-dot" title="공유 라이브러리">●</span>' : '');
+    wrap.appendChild(b);
+  }
+}
+
+function renderProjectBar() {
+  const sel = document.getElementById('projectSelect');
+  if (!sel) return;
+  sel.innerHTML = '';
+  for (const p of PROJECTS) {
+    const o = document.createElement('option');
+    o.value = p.id; o.textContent = p.name || p.id;
+    if (p.id === ACTIVE_PROJECT) o.selected = true;
+    sel.appendChild(o);
+  }
+  const cur = PROJECTS.find(p => p.id === ACTIVE_PROJECT);
+  const hint = document.getElementById('projHint');
+  if (hint) hint.textContent = cur ? `/static/${cur.base}` : '';
+}
+
+// Reload everything for the active project and re-render the pet panel.
+async function reloadProject() {
+  await loadManifest();
+  await loadMonsters();   // project-aware now → refresh so iTamagotchi monsters don't linger
+  await loadTuning();
+  renderProjectBar();
+  renderPetPills();
+  const pets = (manifest.pets && manifest.pets.characters) || {};
+  const cp = document.getElementById('cnt-pet'); if (cp) cp.textContent = Object.keys(pets).length;
+  const cm = document.getElementById('cnt-monster'); if (cm) cm.textContent = monsters.length;
+  const cb = document.getElementById('cnt-boss');
+  if (cb) cb.textContent = Object.keys((manifest.bosses && manifest.bosses.characters) || {}).length;
+  const sm = document.getElementById('stat-monster');
+  if (sm) sm.textContent = `${monsters.length}종 · 스프라이트 보유 ${monsters.filter(m => Object.keys(m.sprite.animations).length).length}종`;
+  renderPet(currentStage);
+  // if the monster panel is currently open, re-render it with the new project's monsters
+  if (document.querySelector('#panel-monster.active')) renderMonster();
+}
+
+async function switchProject(pid) {
+  ACTIVE_PROJECT = pid;
+  try {
+    await fetch('/api/projects/active', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: pid }) });
+  } catch (_) {}
+  await reloadProject();
+}
+
+function renderPet(stage) {
+  currentStage = stage;
+  pendingMap = {};
+  document.querySelectorAll('#panel-pet .pill').forEach(p =>
+    p.classList.toggle('active', p.dataset.stage === stage));
+  const ch = manifest.pets.characters[stage];
+  const grid = document.getElementById('grid-pet');
+  clearFlipbooks();   // stop & drop prior stage's flipbooks (avoid pile-up)
+  grid.innerHTML = '';
+  if (!ch || !ch.animations) {
+    grid.innerHTML = '<div class="empty">no animations for ' + stage + '</div>';
+    return;
+  }
+  const anims = Object.entries(ch.animations).sort((a,b) => a[0].localeCompare(b[0]));
+  document.getElementById('stat-pet').textContent =
+    `${anims.length} actions · ${anims.reduce((s,[,n])=>s+n,0)} frames`;
+  for (const [name, frameCount] of anims) grid.appendChild(makePetCard(stage, name, frameCount));
+  _kickVisibleFlipbooks();   // cards now attached → start decode for this panel
+  updateApplyState();
+}
+
+function makePetCard(stage, name, frameCount) {
+  const card = document.createElement('div');
+  card.className = 'card has-sprite';
+  card.dataset.name = name;
+  card.style.cursor = 'pointer';
+  card.addEventListener('click', (e) => {
+    // Don't open modal when interacting with the rename <select>
+    if (e.target.tagName === 'SELECT' || e.target.tagName === 'OPTION') return;
+    openTune('pet', stage, name, frameCount);
+  });
+
+  // Head
+  const head = document.createElement('div'); head.className = 'head';
+  head.innerHTML = `
+    <div><span class="name">📁 ${name}</span> <span class="id">· ${stage}</span></div>
+    <span class="rarity">${frameCount}f</span>`;
+  // 🎞 frame manager (stopPropagation so it doesn't open the tuning modal)
+  const fmBtn = document.createElement('button');
+  fmBtn.type = 'button'; fmBtn.textContent = '🎞'; fmBtn.title = '프레임 관리 (순서·삭제·복제·추가)';
+  fmBtn.style.cssText = 'margin-left:6px;font-size:13px;padding:1px 5px;cursor:pointer;background:transparent;border:1px solid var(--border,#333);border-radius:5px;color:inherit';
+  fmBtn.addEventListener('click', e => { e.stopPropagation(); if (window.openFrameManager) window.openFrameManager(stage, name, frameCount); });
+  head.querySelector('.rarity').after(fmBtn);
+  // 🖌 pixel editor
+  const pxBtn = document.createElement('button');
+  pxBtn.type = 'button'; pxBtn.textContent = '🖌'; pxBtn.title = '픽셀 편집기 (그리기·지우개·채우기·스포이드)';
+  pxBtn.style.cssText = 'margin-left:4px;font-size:13px;padding:1px 5px;cursor:pointer;background:transparent;border:1px solid var(--border,#333);border-radius:5px;color:inherit';
+  pxBtn.addEventListener('click', e => { e.stopPropagation(); if (window.openPixelEditor) window.openPixelEditor(stage, name, frameCount, 0); });
+  fmBtn.after(pxBtn);
+  card.appendChild(head);
+
+  // Sprite (single big slot)
+  const sprites = document.createElement('div');
+  sprites.className = 'sprites cols-1';
+  const slot = document.createElement('div');
+  slot.className = 'sprite-slot solo';
+  const cv = document.createElement('canvas');
+  cv.setAttribute('aria-label', `${stage}_${name}`);
+  slot.appendChild(cv);
+  const tag = document.createElement('span');
+  tag.className = 'tag';
+  tag.innerHTML = `${name}<span class="f">${frameCount}f</span>`;
+  slot.appendChild(tag);
+  startFlipbook(cv, 'pets', stage, name, frameCount);
+  sprites.appendChild(slot);
+  card.appendChild(sprites);
+
+  // Rename select
+  const sel = document.createElement('select');
+  sel.className = 'rename-select';
+  sel.innerHTML = ALL_ACTIONS.map(a =>
+    `<option value="${a}" ${a===name?'selected':''}>${a}</option>`).join('');
+  sel.addEventListener('change', () => {
+    const newName = sel.value;
+    if (newName === name) {
+      delete pendingMap[name];
+      sel.classList.remove('changed');
+      card.classList.remove('dirty');
+    } else {
+      pendingMap[name] = newName;
+      sel.classList.add('changed');
+      card.classList.add('dirty');
+    }
+    updateApplyState();
+  });
+  card.appendChild(sel);
+
+  return card;
+}
+
+function updateApplyState() {
+  const n = Object.keys(pendingMap).length;
+  const btn = document.getElementById('apply-pet');
+  btn.disabled = n === 0;
+  btn.textContent = n === 0 ? '변경 적용' : `변경 적용 (${n})`;
+}
+
+async function applyChanges() {
+  if (!Object.keys(pendingMap).length) return;
+  const targets = Object.values(pendingMap);
+  const dups = targets.filter((v,i,arr) => arr.indexOf(v) !== i);
+  if (dups.length) {
+    alert('중복 타겟: ' + dups.join(', '));
+    return;
+  }
+  const ch = manifest.pets.characters[currentStage];
+  const existingNames = Object.keys(ch.animations);
+  for (const tgt of targets) {
+    if (existingNames.includes(tgt) && !pendingMap.hasOwnProperty(tgt)) {
+      alert(`충돌: '${tgt}'는 이미 존재. 그 폴더도 다른 이름으로 함께 옮겨주세요`);
+      return;
+    }
+  }
+  log(`applying ${Object.keys(pendingMap).length} renames for stage=${currentStage}…`);
+  const r = await fetch('/api/rename-actions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ stage: currentStage, mapping: pendingMap }),
+  });
+  const data = await r.json();
+  if (!r.ok) {
+    log('ERROR: ' + JSON.stringify(data));
+    alert('실패: ' + (data.detail || JSON.stringify(data)));
+    return;
+  }
+  log(`✓ ${data.renamed} renames done`);
+  for (const m of data.moves) log(`  ${m.from} → ${m.to}`);
+  for (const line of (data.manifest_log || [])) log('  ' + line);
+  await loadManifest();
+  renderPet(currentStage);
+}
+
+// Pet pills are generated dynamically per project → use event delegation.
+document.getElementById('petPills').addEventListener('click', (e) => {
+  const b = e.target.closest('.pill[data-stage]');
+  if (b) renderPet(b.dataset.stage);
+});
+document.getElementById('apply-pet').addEventListener('click', applyChanges);
+
+// --- Project switcher controls ---
+document.getElementById('projectSelect').addEventListener('change', (e) => switchProject(e.target.value));
+document.getElementById('rebuildBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('rebuildBtn');
+  btn.disabled = true; const t = btn.textContent; btn.textContent = '↻ …';
+  try {
+    const r = await fetch('/api/projects/rebuild', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: ACTIVE_PROJECT }) });
+    if (!r.ok) alert('새로고침 실패 (' + r.status + ')'); else await reloadProject();
+  } catch (err) { alert('오류: ' + err.message); }
+  finally { btn.disabled = false; btn.textContent = t; }
+});
+// Slugify any name into a valid project id (a-z 0-9 - _, start alnum, ≤32).
+function slugifyProjectId(name) {
+  let id = (name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32);
+  if (!/^[a-z0-9]/.test(id)) id = '';   // must start with alnum (e.g. all-Korean names → empty)
+  return id;
+}
+document.getElementById('newProjectBtn').addEventListener('click', async () => {
+  // Ask for the display NAME first (Korean OK) — the id is derived automatically.
+  const name = (prompt('새 프로젝트 이름 (한글 가능, 예: 스페이스 게임):') || '').trim();
+  if (!name) return;
+  let id = slugifyProjectId(name);
+  if (!id) {   // non-latin name → generate a fallback id
+    let n = PROJECTS.length;
+    do { id = 'game' + (++n); } while (PROJECTS.some(p => p.id === id));
+  }
+  id = (prompt('프로젝트 ID — 폴더 이름에 쓰입니다 (영문소문자·숫자·-·_ 만, 한글 불가):', id) || '').trim().toLowerCase();
+  if (!id) return;
+  id = slugifyProjectId(id);
+  if (!id) { alert('ID는 영문소문자·숫자로 시작해야 합니다 (예: spacegame).'); return; }
+  try {
+    const r = await fetch('/api/projects', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, name }) });
+    const d = await r.json();
+    if (!r.ok) {
+      alert('생성 실패: ' + (d.detail || r.status) + '\n(ID는 영문소문자·숫자·-·_ 만 가능, 한글 불가. 예: spacegame)');
+      return;
+    }
+    PROJECTS = d.projects;
+    await switchProject(d.project.id);
+    alert(`✅ 프로젝트 "${d.project.name}" 생성됨 (ID: ${d.project.id})\n\n스프라이트를 아래 폴더에 넣고 "↻ 새로고침"을 누르세요:\nstatic/${d.project.base}/pets/<캐릭터>/anims/<액션>/fN.png`);
+  } catch (err) { alert('오류: ' + err.message); }
+});
+
+// ===========================================================
+//  Import an external folder → animation preview (non-destructive).
+//  Pick any folder on disk; its images are grouped by sub-folder and
+//  played as flipbooks. "되돌리기" rolls back to the project folder view.
+//  Nothing is saved — existing project folders are untouched.
+// ===========================================================
+let _importBlobUrls = [];
+let _importActive = false;
+let _importGroups = null;   // { actionName: [File,...] } — for saving into a project
+let _importRoot = '';       // picked folder's root name (default character name)
+function _naturalKey(s) { return s.replace(/\d+/g, m => m.padStart(8, '0')); }
+function fileToDataURL(file) {
+  return new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = rej; fr.readAsDataURL(file); });
+}
+function _clearImportBlobs() {
+  _importBlobUrls.forEach(u => { try { URL.revokeObjectURL(u); } catch (_) {} });
+  _importBlobUrls = [];
+}
+document.getElementById('importFolderBtn').addEventListener('click', () =>
+  document.getElementById('importFolderInput').click());
+document.getElementById('importBackBtn').addEventListener('click', exitImportView);
+document.getElementById('importFolderInput').addEventListener('change', (e) => {
+  const all = [...e.target.files];
+  e.target.value = '';   // allow re-picking the same folder later
+  const imgs = all.filter(f => /\.(png|jpe?g|gif|webp|bmp|avif)$/i.test(f.name));
+  if (!imgs.length) { alert('그 폴더에서 이미지 파일(png·jpg·gif·webp·bmp)을 찾지 못했어요.\n(mp4 같은 동영상은 아직 미지원 — 프레임 이미지 폴더를 골라주세요.)'); return; }
+  renderImportedFolder(imgs);
+});
+
+function renderImportedFolder(files) {
+  const rootName = (files[0].webkitRelativePath || files[0].name).split('/')[0] || '폴더';
+  // group images by their sub-folder under the picked root — each group = one animation
+  const groups = {};
+  for (const f of files) {
+    const parts = (f.webkitRelativePath || f.name).split('/');
+    const g = parts.length >= 2 ? (parts.slice(1, -1).join('/') || '(루트)') : '(루트)';
+    (groups[g] = groups[g] || []).push(f);
+  }
+  for (const g in groups) groups[g].sort((a, b) => _naturalKey(a.name).localeCompare(_naturalKey(b.name)));
+
+  _importActive = true;
+  _importGroups = groups;      // keep File objects for "save into project"
+  _importRoot = rootName;
+  clearFlipbooks();
+  _clearImportBlobs();
+  // show the pet panel + freeze the project pills while previewing
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.toggle('active', t.dataset.cat === 'pet'));
+  document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === 'panel-pet'));
+  document.getElementById('importBackBtn').hidden = false;
+  document.getElementById('importSaveBtn').hidden = false;
+  const pills = document.getElementById('petPills');
+  pills.style.opacity = '0.35'; pills.style.pointerEvents = 'none';
+
+  const grid = document.getElementById('grid-pet');
+  grid.innerHTML = '';
+  const gnames = Object.keys(groups).sort((a, b) => a.localeCompare(b));
+  document.getElementById('stat-pet').textContent =
+    `📂 ${rootName} · ${gnames.length} 폴더 · ${files.length} 이미지 (미리보기 · 저장 안 됨)`;
+  for (const g of gnames) grid.appendChild(makeImportCard(g, groups[g]));
+}
+
+function makeImportCard(name, files) {
+  const urls = files.map(f => { const u = URL.createObjectURL(f); _importBlobUrls.push(u); return u; });
+  const card = document.createElement('div'); card.className = 'card has-sprite';
+  const head = document.createElement('div'); head.className = 'head';
+  head.innerHTML = `<div><span class="name">📁 ${name}</span></div><span class="rarity">${files.length}f</span>`;
+  card.appendChild(head);
+  const sprites = document.createElement('div'); sprites.className = 'sprites cols-1';
+  const slot = document.createElement('div'); slot.className = 'sprite-slot solo';
+  const img = document.createElement('img');
+  img.className = 'sprite-img pet-img';
+  img.style.width = '100%'; img.style.height = '100%'; img.style.objectFit = 'contain';
+  img.src = urls[0];
+  slot.appendChild(img); sprites.appendChild(slot); card.appendChild(sprites);
+  // playback: cycle blob urls with an fps control
+  let i = 0, fps = 12, timer = null;
+  const tick = () => { i = (i + 1) % urls.length; img.src = urls[i]; };
+  const play = () => { if (timer) clearInterval(timer); timer = (urls.length > 1) ? setInterval(tick, 1000 / fps) : null; };
+  const stop = () => { if (timer) { clearInterval(timer); timer = null; } };
+  const ctrl = document.createElement('div'); ctrl.className = 'tune-row'; ctrl.style.padding = '6px 10px';
+  const lab = document.createElement('label'); lab.innerHTML = `속도 <span class="imp-fps">${fps} fps</span>`;
+  const range = document.createElement('input');
+  range.type = 'range'; range.min = '1'; range.max = '30'; range.value = String(fps);
+  range.addEventListener('input', () => { fps = +range.value; lab.querySelector('.imp-fps').textContent = fps + ' fps'; if (timer) play(); });
+  ctrl.appendChild(lab); ctrl.appendChild(range); card.appendChild(ctrl);
+  play();
+  _flipCleanups.push(stop);   // clearFlipbooks()/exit stops this preview
+  return card;
+}
+
+function exitImportView() {
+  _importActive = false;
+  _importGroups = null;
+  clearFlipbooks();           // runs each import card's stop()
+  _clearImportBlobs();
+  document.getElementById('importBackBtn').hidden = true;
+  document.getElementById('importSaveBtn').hidden = true;
+  const pills = document.getElementById('petPills');
+  pills.style.opacity = ''; pills.style.pointerEvents = '';
+  renderPetPills();
+  renderPet(currentStage);    // ← rollback: back to the original project folder view
+}
+
+// Save the currently-imported folder into a project (each sub-folder → an action).
+async function saveImportedToProject() {
+  if (!_importGroups || !Object.keys(_importGroups).length) return;
+  const ids = PROJECTS.map(p => p.id);
+  const defProj = (ACTIVE_PROJECT && ACTIVE_PROJECT !== 'shared') ? ACTIVE_PROJECT : '';
+  let proj = (prompt(`저장할 프로젝트 ID (${ids.join(' / ')}):`, defProj) || '').trim();
+  if (!proj) return;
+  if (!ids.includes(proj)) { alert('없는 프로젝트입니다: ' + proj + '\n(먼저 "+ 새 프로젝트"로 만들어주세요)'); return; }
+  let char = (prompt('캐릭터 이름 — 폴더명 (영문소문자·숫자):', slugifyProjectId(_importRoot) || 'char') || '').trim();
+  char = slugifyProjectId(char);
+  if (!char) { alert('캐릭터 이름은 영문소문자·숫자여야 합니다 (예: hero).'); return; }
+  const groups = Object.entries(_importGroups);
+  // derive action name per group (slug; root-level → idle; fallbacks for non-latin)
+  const plan = groups.map(([g, files], i) => {
+    let a = (g === '(루트)') ? 'idle' : slugifyProjectId(g);
+    if (!a) a = 'action' + (i + 1);
+    return { action: a, files };
+  });
+  if (!confirm(`프로젝트 "${proj}" 에 캐릭터 "${char}" 로 저장합니다.\n액션 ${plan.length}개: ${plan.map(p => p.action).join(', ')}\n(같은 이름 액션은 덮어씁니다.) 계속할까요?`)) return;
+  const btn = document.getElementById('importSaveBtn');
+  btn.disabled = true; const label = btn.textContent;
+  try {
+    let done = 0;
+    for (const { action, files } of plan) {
+      btn.textContent = `💾 저장 중 ${++done}/${plan.length}…`;
+      const frames = await Promise.all(files.map(fileToDataURL));
+      const r = await fetch('/api/project/save-frames', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project: proj, category: 'pets', char, action, frames }) });
+      if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.detail || (action + ' 저장 실패')); }
+    }
+    alert(`✅ 저장 완료\n프로젝트 ${proj} · 캐릭터 ${char} · 액션 ${plan.length}개`);
+    exitImportView();
+    await switchProject(proj);          // jump to the project so they see it saved
+    currentStage = char; renderPetPills(); renderPet(char);
+  } catch (e) {
+    alert('저장 오류: ' + e.message);
+  } finally { btn.disabled = false; btn.textContent = label; }
+}
+document.getElementById('importSaveBtn').addEventListener('click', saveImportedToProject);
+
+// ===========================================================
+//  Sprite-sheet slicing → frames → animation → save to project
+// ===========================================================
+(function () {
+  const $ = id => document.getElementById(id);
+  let img = null, frames = [], animTimer = null, animI = 0, recomputeT = null;
+  function openSlice(file) {
+    const url = URL.createObjectURL(file);
+    const im = new Image();
+    im.onload = () => { URL.revokeObjectURL(url); img = im; $('sliceOverlay').hidden = false; recompute(); };
+    im.onerror = () => { URL.revokeObjectURL(url); alert('이미지를 못 읽었어요.'); };
+    im.src = url;
+  }
+  function closeSlice() { stopAnim(); $('sliceOverlay').hidden = true; img = null; frames = []; }
+  function dims() {
+    if (!img) return { cols: 1, rows: 1, cw: 1, ch: 1 };
+    if ($('sliceMode').value === 'cell') {
+      const cw = Math.max(1, +$('sliceCellW').value || 1), ch = Math.max(1, +$('sliceCellH').value || 1);
+      return { cols: Math.max(1, Math.floor(img.width / cw)), rows: Math.max(1, Math.floor(img.height / ch)), cw, ch };
+    }
+    const cols = Math.max(1, +$('sliceCols').value), rows = Math.max(1, +$('sliceRows').value);
+    return { cols, rows, cw: img.width / cols, ch: img.height / rows };
+  }
+  function isBlank(cv) {
+    const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
+    for (let i = 3; i < d.length; i += 4) if (d[i] > 8) return false;
+    return true;
+  }
+  function recompute() {
+    if (!img) return;
+    const { cols, rows, cw, ch } = dims();
+    const sh = $('sliceSheet'); sh.width = img.width; sh.height = img.height;
+    const sc = sh.getContext('2d'); sc.clearRect(0, 0, sh.width, sh.height); sc.drawImage(img, 0, 0);
+    sc.strokeStyle = 'rgba(0,229,255,.75)'; sc.lineWidth = Math.max(1, img.width / 500);
+    for (let c = 1; c < cols; c++) { sc.beginPath(); sc.moveTo(c * cw, 0); sc.lineTo(c * cw, img.height); sc.stroke(); }
+    for (let r = 1; r < rows; r++) { sc.beginPath(); sc.moveTo(0, r * ch); sc.lineTo(img.width, r * ch); sc.stroke(); }
+    frames = [];
+    const trim = $('sliceTrim').checked;
+    const tmp = document.createElement('canvas'); tmp.width = Math.max(1, Math.round(cw)); tmp.height = Math.max(1, Math.round(ch));
+    const tctx = tmp.getContext('2d');
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      tctx.clearRect(0, 0, tmp.width, tmp.height);
+      tctx.drawImage(img, c * cw, r * ch, cw, ch, 0, 0, tmp.width, tmp.height);
+      if (trim && isBlank(tmp)) continue;
+      frames.push(tmp.toDataURL('image/png'));
+    }
+    $('sliceInfo').textContent = `${cols}×${rows} 격자 · 셀 ${Math.round(cw)}×${Math.round(ch)}px · 프레임 ${frames.length}개` + (trim ? ' (빈칸 제외됨)' : '');
+    renderStrip(); startAnim();
+  }
+  const recomputeDebounced = () => { clearTimeout(recomputeT); recomputeT = setTimeout(recompute, 130); };
+  function renderStrip() {
+    const strip = $('sliceStrip'); strip.innerHTML = '';
+    frames.slice(0, 240).forEach((f, i) => {
+      const t = document.createElement('img'); t.src = f; t.title = 'f' + (i + 1);
+      t.style.cssText = 'width:40px;height:40px;object-fit:contain;background:#fff;border:1px solid var(--border,#333);border-radius:4px';
+      strip.appendChild(t);
+    });
+  }
+  function stopAnim() { if (animTimer) { clearInterval(animTimer); animTimer = null; } }
+  function startAnim() {
+    stopAnim(); animI = 0;
+    if (!frames.length) { $('sliceAnim').removeAttribute('src'); return; }
+    $('sliceAnim').src = frames[0];
+    if (frames.length > 1) { const fps = +$('sliceFps').value; animTimer = setInterval(() => { animI = (animI + 1) % frames.length; $('sliceAnim').src = frames[animI]; }, 1000 / fps); }
+  }
+  async function save() {
+    if (!frames.length) { alert('자른 프레임이 없습니다.'); return; }
+    const ids = PROJECTS.map(p => p.id);
+    const defP = (ACTIVE_PROJECT && ACTIVE_PROJECT !== 'shared') ? ACTIVE_PROJECT : '';
+    const proj = (prompt(`저장할 프로젝트 ID (${ids.join(' / ')}):`, defP) || '').trim();
+    if (!proj) return;
+    if (!ids.includes(proj)) { alert('없는 프로젝트: ' + proj + '\n(먼저 "+ 새 프로젝트"로 만드세요)'); return; }
+    const char = slugifyProjectId((prompt('캐릭터 이름 (영문소문자·숫자):', 'char') || '').trim());
+    if (!char) { alert('캐릭터 이름이 필요합니다 (예: hero).'); return; }
+    const action = slugifyProjectId((prompt('액션 이름 (예: idle, walk, attack):', 'idle') || '').trim());
+    if (!action) { alert('액션 이름이 필요합니다.'); return; }
+    const btn = $('sliceSaveBtn'); btn.disabled = true; const t = btn.textContent; btn.textContent = '💾 저장 중…';
+    try {
+      const r = await fetch('/api/project/save-frames', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project: proj, category: 'pets', char, action, frames }) });
+      if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.detail || '저장 실패'); }
+      alert(`✅ 저장 완료: ${proj} / ${char} / ${action} (${frames.length} 프레임)`);
+      closeSlice(); await switchProject(proj); currentStage = char; renderPetPills(); renderPet(char);
+    } catch (e) { alert('저장 오류: ' + e.message); } finally { btn.disabled = false; btn.textContent = t; }
+  }
+  $('sliceBtn').addEventListener('click', () => $('sliceInput').click());
+  $('sliceReload').addEventListener('click', () => $('sliceInput').click());
+  $('sliceInput').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f) openSlice(f); });
+  $('sliceClose').addEventListener('click', closeSlice);
+  $('sliceMode').addEventListener('change', () => { const cell = $('sliceMode').value === 'cell'; $('sliceCellCtl').hidden = !cell; $('sliceGridCtl').hidden = cell; recompute(); });
+  $('sliceCols').addEventListener('input', () => { $('sliceColsV').textContent = $('sliceCols').value; recomputeDebounced(); });
+  $('sliceRows').addEventListener('input', () => { $('sliceRowsV').textContent = $('sliceRows').value; recomputeDebounced(); });
+  $('sliceCellW').addEventListener('input', recomputeDebounced);
+  $('sliceCellH').addEventListener('input', recomputeDebounced);
+  $('sliceTrim').addEventListener('change', recompute);
+  $('sliceFps').addEventListener('input', () => { $('sliceFpsV').textContent = $('sliceFps').value + ' fps'; startAnim(); });
+  $('sliceSaveBtn').addEventListener('click', save);
+})();
+
+// ===========================================================
+//  Frame manager — reorder / delete / duplicate / add frames of an action,
+//  then save (overwrites the action). Reuses /api/project/save-frames.
+// ===========================================================
+(function () {
+  const $ = id => document.getElementById(id);
+  let ctx = null, frames = [], animTimer = null, animI = 0;
+  function urlToDataURL(u) {
+    return fetch(u).then(r => r.blob()).then(b => new Promise(res => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(b); }));
+  }
+  async function openFM(char, action, frameCount) {
+    const base = (CHAR_BASE.pets && CHAR_BASE.pets[char]) || '/static/sprites';
+    ctx = { project: ACTIVE_PROJECT, char, action, base };
+    $('fmTitle').textContent = `🎞 ${char} · ${action}`;
+    $('fmStatus').textContent = '프레임 불러오는 중…';
+    $('fmOverlay').hidden = false;
+    frames = [];
+    for (let i = 1; i <= frameCount; i++) {
+      try { frames.push(await urlToDataURL(`${base}/pets/${char}/anims/${action}/f${i}.png?t=${Date.now()}`)); } catch (_) {}
+    }
+    $('fmStatus').textContent = '';
+    render(); startAnim();
+  }
+  function closeFM() { stopAnim(); $('fmOverlay').hidden = true; frames = []; ctx = null; }
+  function render() {
+    $('fmInfo').textContent = `${frames.length} 프레임` + (ctx ? ` · ${ctx.project} / ${ctx.char} / ${ctx.action}` : '');
+    const strip = $('fmStrip'); strip.innerHTML = '';
+    frames.forEach((f, i) => {
+      const cell = document.createElement('div'); cell.draggable = true; cell.dataset.i = i;
+      cell.style.cssText = 'border:1px solid var(--border,#333);border-radius:6px;padding:3px;background:var(--card2,#1d1d27);text-align:center;cursor:grab';
+      cell.innerHTML = `<img src="${f}" style="width:54px;height:54px;object-fit:contain;background:#fff;border-radius:3px;display:block"><div style="font-size:10px;opacity:.7">f${i + 1}</div>`;
+      const bar = document.createElement('div'); bar.style.cssText = 'display:flex;gap:1px;justify-content:center;margin-top:2px';
+      const mk = (t, fn, title) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = t; b.title = title; b.style.cssText = 'font-size:11px;padding:1px 4px;cursor:pointer;line-height:1'; b.onclick = e => { e.stopPropagation(); fn(); }; return b; };
+      bar.append(mk('◀', () => move(i, -1), '왼쪽'), mk('⎘', () => dup(i), '복제'), mk('✕', () => del(i), '삭제'), mk('▶', () => move(i, 1), '오른쪽'));
+      cell.appendChild(bar);
+      cell.addEventListener('dragstart', e => e.dataTransfer.setData('text/plain', i));
+      cell.addEventListener('dragover', e => e.preventDefault());
+      cell.addEventListener('drop', e => { e.preventDefault(); reorder(+e.dataTransfer.getData('text/plain'), i); });
+      strip.appendChild(cell);
+    });
+  }
+  function move(i, d) { const j = i + d; if (j < 0 || j >= frames.length) return; [frames[i], frames[j]] = [frames[j], frames[i]]; render(); startAnim(); }
+  function dup(i) { frames.splice(i + 1, 0, frames[i]); render(); startAnim(); }
+  function del(i) { if (frames.length <= 1) { alert('최소 1프레임은 남아야 합니다.'); return; } frames.splice(i, 1); render(); startAnim(); }
+  function reorder(from, to) { if (from === to || from == null) return; const [f] = frames.splice(from, 1); frames.splice(to, 0, f); render(); startAnim(); }
+  function stopAnim() { if (animTimer) { clearInterval(animTimer); animTimer = null; } }
+  function startAnim() { stopAnim(); animI = 0; if (!frames.length) { $('fmAnim').removeAttribute('src'); return; } $('fmAnim').src = frames[0]; if (frames.length > 1) { const fps = +$('fmFps').value; animTimer = setInterval(() => { animI = (animI + 1) % frames.length; $('fmAnim').src = frames[animI]; }, 1000 / fps); } }
+  async function addFrames(files) {
+    for (const f of files) frames.push(await new Promise(res => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(f); }));
+    render(); startAnim();
+  }
+  async function save() {
+    if (!ctx || !frames.length) return;
+    const btn = $('fmSaveBtn'); btn.disabled = true; const t = btn.textContent; btn.textContent = '💾 저장 중…';
+    try {
+      const r = await fetch('/api/project/save-frames', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project: ctx.project, category: 'pets', char: ctx.char, action: ctx.action, frames }) });
+      if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.detail || '저장 실패'); }
+      closeFM(); await reloadProject();
+    } catch (e) { alert('저장 오류: ' + e.message); } finally { btn.disabled = false; btn.textContent = t; }
+  }
+  $('fmClose').addEventListener('click', closeFM);
+  $('fmFps').addEventListener('input', () => { $('fmFpsV').textContent = $('fmFps').value + ' fps'; startAnim(); });
+  $('fmAddBtn').addEventListener('click', () => $('fmAddInput').click());
+  $('fmAddInput').addEventListener('change', e => { const fs = [...e.target.files]; e.target.value = ''; if (fs.length) addFrames(fs); });
+  $('fmSaveBtn').addEventListener('click', save);
+  window.openFrameManager = openFM;
+})();
+
+// ===========================================================
+//  Manual pixel/paint editor — brush / eraser / fill / pick, undo/redo,
+//  onion-skin, frame navigation. Saves the action via save-frames.
+// ===========================================================
+(function () {
+  const $ = id => document.getElementById(id);
+  const cv = $('pxCanvas');
+  const c2 = () => cv.getContext('2d', { willReadFrequently: true });
+  let ictx = { project: null, char: null, action: null, base: null };
+  let frames = [], cur = 0, tool = 'brush', drawing = false, last = null, undo = [], redo = [];
+  function setDisplaySize() {
+    const disp = Math.min(440, cv.width || 512), scale = disp / (cv.width || 512), h = (cv.height || 512) * scale;
+    cv.style.width = disp + 'px'; cv.style.height = h + 'px';
+    const on = $('pxOnionCv'); on.width = cv.width; on.height = cv.height; on.style.width = disp + 'px'; on.style.height = h + 'px';
+  }
+  function blobUrlToDataURL(u) { return fetch(u).then(r => r.blob()).then(b => new Promise(res => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(b); })); }
+  function loadFrameToCanvas(i) {
+    return new Promise(res => { const im = new Image(); im.onload = () => {
+      cv.width = im.naturalWidth || 512; cv.height = im.naturalHeight || 512; setDisplaySize();
+      const c = c2(); c.clearRect(0, 0, cv.width, cv.height); c.drawImage(im, 0, 0); undo = []; redo = []; res();
+    }; im.onerror = () => res(); im.src = frames[i]; });
+  }
+  function drawOnion() {
+    const on = $('pxOnionCv'), c = on.getContext('2d'); c.clearRect(0, 0, on.width, on.height);
+    if (!$('pxOnion').checked || cur <= 0) return;
+    const im = new Image(); im.onload = () => { c.clearRect(0, 0, on.width, on.height); c.drawImage(im, 0, 0, on.width, on.height); }; im.src = frames[cur - 1];
+  }
+  async function openPX(char, action, frameCount, start) {
+    const base = (CHAR_BASE.pets && CHAR_BASE.pets[char]) || '/static/sprites';
+    ictx = { project: ACTIVE_PROJECT, char, action, base };
+    $('pxTitle').textContent = `🖌 ${char} · ${action}`; $('pxStatus').textContent = '불러오는 중…'; $('pxOverlay').hidden = false;
+    frames = [];
+    for (let i = 1; i <= frameCount; i++) { try { frames.push(await blobUrlToDataURL(`${base}/pets/${char}/anims/${action}/f${i}.png?t=${Date.now()}`)); } catch (_) {} }
+    $('pxStatus').textContent = '';
+    cur = Math.max(0, Math.min(start || 0, frames.length - 1));
+    await loadFrameToCanvas(cur); updateLbl(); drawOnion();
+  }
+  function closePX() { $('pxOverlay').hidden = true; frames = []; undo = []; redo = []; }
+  function updateLbl() { $('pxFrameLbl').textContent = `f${cur + 1}/${frames.length}`; $('pxInfo').textContent = `${cv.width}×${cv.height}px · ${ictx.project}/${ictx.char}/${ictx.action}`; }
+  function commit() { if (frames.length) frames[cur] = cv.toDataURL('image/png'); }
+  function pushUndo() { try { undo.push(c2().getImageData(0, 0, cv.width, cv.height)); if (undo.length > 25) undo.shift(); redo = []; } catch (_) {} }
+  function pos(e) { const r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left) * cv.width / r.width, y: (e.clientY - r.top) * cv.height / r.height }; }
+  function dot(p) { const c = c2(), s = +$('pxSize').value;
+    c.globalCompositeOperation = (tool === 'eraser') ? 'destination-out' : 'source-over';
+    c.fillStyle = (tool === 'eraser') ? 'rgba(0,0,0,1)' : $('pxColor').value;
+    c.beginPath(); c.arc(p.x, p.y, s / 2, 0, 7); c.fill(); c.globalCompositeOperation = 'source-over'; }
+  function strokeTo(p) { const c = c2(), s = +$('pxSize').value; c.lineWidth = s; c.lineCap = 'round'; c.lineJoin = 'round';
+    c.globalCompositeOperation = (tool === 'eraser') ? 'destination-out' : 'source-over';
+    c.strokeStyle = (tool === 'eraser') ? 'rgba(0,0,0,1)' : $('pxColor').value;
+    c.beginPath(); c.moveTo(last.x, last.y); c.lineTo(p.x, p.y); c.stroke(); c.globalCompositeOperation = 'source-over'; last = p; }
+  function pick(p) { const d = c2().getImageData(Math.round(p.x), Math.round(p.y), 1, 1).data; if (d[3] === 0) return; $('pxColor').value = '#' + [d[0], d[1], d[2]].map(v => v.toString(16).padStart(2, '0')).join(''); }
+  function hexRgb(h) { h = h.replace('#', ''); return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16), 255]; }
+  function fill(p) { const c = c2(), W = cv.width, H = cv.height, img = c.getImageData(0, 0, W, H), d = img.data;
+    const sx = Math.round(p.x), sy = Math.round(p.y); if (sx < 0 || sy < 0 || sx >= W || sy >= H) return;
+    const si = (sy * W + sx) * 4, t = [d[si], d[si + 1], d[si + 2], d[si + 3]], f = hexRgb($('pxColor').value);
+    if (t[0] === f[0] && t[1] === f[1] && t[2] === f[2] && t[3] === f[3]) return;
+    const m = i => Math.abs(d[i] - t[0]) <= 24 && Math.abs(d[i + 1] - t[1]) <= 24 && Math.abs(d[i + 2] - t[2]) <= 24 && Math.abs(d[i + 3] - t[3]) <= 24;
+    const st = [si]; while (st.length) { const i = st.pop(); if (!m(i)) continue; d[i] = f[0]; d[i + 1] = f[1]; d[i + 2] = f[2]; d[i + 3] = f[3];
+      const px = (i / 4) % W, py = Math.floor((i / 4) / W);
+      if (px > 0) st.push(i - 4); if (px < W - 1) st.push(i + 4); if (py > 0) st.push(i - W * 4); if (py < H - 1) st.push(i + W * 4); }
+    c.putImageData(img, 0, 0); }
+  cv.addEventListener('pointerdown', e => { try { cv.setPointerCapture(e.pointerId); } catch (_) {} const p = pos(e);
+    if (tool === 'pick') { pick(p); return; } if (tool === 'fill') { pushUndo(); fill(p); return; }
+    pushUndo(); drawing = true; last = p; dot(p); });
+  cv.addEventListener('pointermove', e => { if (drawing) strokeTo(pos(e)); });
+  window.addEventListener('pointerup', () => { drawing = false; last = null; });
+  document.querySelectorAll('.px-tool').forEach(b => b.addEventListener('click', () => { tool = b.dataset.tool; document.querySelectorAll('.px-tool').forEach(x => x.classList.toggle('active', x === b)); }));
+  $('pxSize').addEventListener('input', () => $('pxSizeV').textContent = $('pxSize').value);
+  $('pxUndo').addEventListener('click', () => { if (!undo.length) return; redo.push(c2().getImageData(0, 0, cv.width, cv.height)); c2().putImageData(undo.pop(), 0, 0); });
+  $('pxRedo').addEventListener('click', () => { if (!redo.length) return; undo.push(c2().getImageData(0, 0, cv.width, cv.height)); c2().putImageData(redo.pop(), 0, 0); });
+  $('pxOnion').addEventListener('change', drawOnion);
+  $('pxPrev').addEventListener('click', async () => { if (cur <= 0) return; commit(); cur--; await loadFrameToCanvas(cur); updateLbl(); drawOnion(); });
+  $('pxNext').addEventListener('click', async () => { if (cur >= frames.length - 1) return; commit(); cur++; await loadFrameToCanvas(cur); updateLbl(); drawOnion(); });
+  $('pxClose').addEventListener('click', closePX);
+  $('pxSaveBtn').addEventListener('click', async () => { commit(); const btn = $('pxSaveBtn'); btn.disabled = true; const t = btn.textContent; btn.textContent = '💾 저장 중…';
+    try { const r = await fetch('/api/project/save-frames', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ project: ictx.project, category: 'pets', char: ictx.char, action: ictx.action, frames }) });
+      if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.detail || '저장 실패'); } closePX(); await reloadProject(); }
+    catch (e) { alert('저장 오류: ' + e.message); } finally { btn.disabled = false; btn.textContent = t; } });
+  window.openPixelEditor = openPX;
+})();
+
+/* ===========================================================
+   MONSTER panel
+   =========================================================== */
+let currentMonsterFilter = 'all';
+
+function renderMonster() {
+  const grid = document.getElementById('grid-monster');
+  clearFlipbooks();   // drop prior flipbooks before rebuilding this grid
+  grid.innerHTML = '';
+  const filtered = monsters.filter(m => {
+    if (currentMonsterFilter === 'with-sprite') return Object.keys(m.sprite.animations).length > 0;
+    if (currentMonsterFilter === 'no-sprite')   return Object.keys(m.sprite.animations).length === 0;
+    return true;
+  });
+  if (!filtered.length) {
+    grid.innerHTML = '<div class="empty">매칭되는 몬스터 없음</div>';
+    return;
+  }
+  filtered.sort((a, b) => {
+    const sa = Object.keys(a.sprite.animations).length > 0;
+    const sb = Object.keys(b.sprite.animations).length > 0;
+    if (sa !== sb) return sb - sa;
+    if (a.rarity !== b.rarity) return (b.rarity || 0) - (a.rarity || 0);
+    return a.id.localeCompare(b.id);
+  });
+  for (const m of filtered) grid.appendChild(makeMonsterCard(m));
+  _kickVisibleFlipbooks();   // cards now attached → start decode for this panel
+}
+
+function makeMonsterCard(m) {
+  const hasSprite = Object.keys(m.sprite.animations).length > 0;
+  const card = document.createElement('div');
+  card.className = 'card ' + (hasSprite ? 'has-sprite' : 'no-sprite');
+  if (hasSprite) {
+    card.style.cursor = 'pointer';
+    card.addEventListener('click', () => {
+      // Open tuning for the first available action (usually idle)
+      const want = ['idle', 'attack', 'hurt'];
+      const have = m.sprite.animations;
+      const action = want.find(a => have[a] != null) || Object.keys(have)[0];
+      openTune('monster', m.id, action, have[action]);
+    });
+  }
+
+  const head = document.createElement('div'); head.className = 'head';
+  head.innerHTML = `
+    <div><span class="name">${m.name}</span> <span class="id">· ${m.id}</span></div>
+    <span class="rarity">${rarityStars(m.rarity || 0)}</span>`;
+  card.appendChild(head);
+
+  const desc = document.createElement('div'); desc.className = 'desc';
+  desc.textContent = m.description || '—';
+  card.appendChild(desc);
+
+  // Sprite previews
+  const sprites = document.createElement('div');
+  sprites.className = 'sprites cols-3';
+  const have = m.sprite.animations || {};
+  const wanted = ['idle','attack','hurt'];
+  const ordered = [...wanted.filter(a => have[a] != null),
+                   ...Object.keys(have).filter(a => !wanted.includes(a))].slice(0, 3);
+  if (!ordered.length) {
+    sprites.className = 'sprites cols-1';
+    const s = document.createElement('div');
+    s.className = 'sprite-slot empty';
+    s.textContent = '⚠ 스프라이트 없음 (sprite-tools / video_to_idle.py 로 생성 필요)';
+    sprites.appendChild(s);
+  } else {
+    for (const action of ordered) {
+      const slot = document.createElement('div');
+      slot.className = 'sprite-slot clickable';
+      slot.title = `${action} 튜닝 열기`;
+      slot.addEventListener('click', (e) => {
+        e.stopPropagation();   // don't trigger the card-level (idle) handler
+        openTune('monster', m.id, action, have[action]);
+      });
+      const cv = document.createElement('canvas'); cv.setAttribute('aria-label', `${m.id}_${action}`);
+      slot.appendChild(cv);
+      const tag = document.createElement('span'); tag.className = 'tag';
+      tag.innerHTML = `${action}<span class="f">${have[action]}f</span>`;
+      slot.appendChild(tag);
+      startFlipbook(cv, 'monsters', m.id, action, have[action]);
+      sprites.appendChild(slot);
+    }
+    for (let i = ordered.length; i < 3; i++) {
+      const s = document.createElement('div'); s.className = 'sprite-slot empty'; s.textContent = '—';
+      sprites.appendChild(s);
+    }
+  }
+  card.appendChild(sprites);
+
+  // Meta
+  const meta = document.createElement('div'); meta.className = 'meta-grid';
+  const e = m.encounter || {};
+  function row(k, html) { if (html) meta.innerHTML += `<span class="k">${k}</span><span class="v">${html}</span>`; }
+  if (m.family) row('계열', `<span class="chip rare">${FAMILY_KO[m.family] || m.family}</span>`);
+  if (e.location?.length) row('장소', e.location.map(l => `<span class="chip">${l}</span>`).join(''));
+  if (e.bait?.length)     row('미끼', e.bait.map(b => `<span class="chip accent">${b}</span>`).join(''));
+  if (e.time_of_day?.length) row('시간', e.time_of_day.map(t => `<span class="chip warn">${t}</span>`).join(''));
+  const thresholds = [];
+  for (const k of Object.keys(e)) {
+    if (k.endsWith('_min') && k !== 'time_of_day') thresholds.push(`<span class="chip">${k.replace('_min','')} ≥ ${e[k]}</span>`);
+  }
+  if (e.personality_pref) thresholds.push(`<span class="chip">선호: ${e.personality_pref}</span>`);
+  if (thresholds.length) row('조건', thresholds.join(''));
+  if (m.passive && Object.keys(m.passive).length) {
+    const html = Object.entries(m.passive).map(([k,v]) =>
+      `<span class="chip green">${PASSIVE_KO[k] || k} ×${v}</span>`).join('');
+    row('패시브', html);
+  }
+  card.appendChild(meta);
+
+  const foot = document.createElement('div'); foot.className = 'footer-meta';
+  const frames = Object.values(have).reduce((a,b) => a+b, 0);
+  foot.innerHTML = `<span>희귀도 ${m.rarity || '—'}</span>
+                    <span>${hasSprite ? Object.keys(have).length + ' anim · ' + frames + ' frames' : 'no sprite'}</span>`;
+  card.appendChild(foot);
+  return card;
+}
+
+document.querySelectorAll('#panel-monster .pill').forEach(b =>
+  b.addEventListener('click', () => {
+    document.querySelectorAll('#panel-monster .pill').forEach(p => p.classList.toggle('active', p === b));
+    currentMonsterFilter = b.dataset.filter;
+    renderMonster();
+  }));
+
+/* ===========================================================
+   Flipbook (shared)
+   =========================================================== */
+function _cardCat(category) {
+  // folder→data-cat mapping for tuning lookup
+  return category === 'pets' ? 'pet' : (category === 'monsters' ? 'monster' : 'boss');
+}
+function _applyCardTuning(img, category, base, scenario) {
+  const cat = _cardCat(category);
+  const cfg = getTune(cat, base, scenario);
+  const sc = cfg.scale != null ? cfg.scale : 1;
+  const ox = cfg.offset_x != null ? cfg.offset_x : 0;
+  const oy = cfg.offset_y != null ? cfg.offset_y : 0;
+  img.style.transform = `translate(${ox}px, ${oy}px) scale(${sc})`;
+  img.style.transformOrigin = '50% 80%';
+}
+// Flipbook engine — canvas + downscaled ImageBitmap cache.
+//
+// The old approach (preload EVERY frame as a <img> then swap img.src at 24fps)
+// was the lag: a 9-action pet is ~2,100 full-res 512px PNGs, so on load every
+// card fired hundreds of fetches at once (request backlog) and the rAF kept
+// re-decoding 512px frames the decoded-image cache couldn't hold (→ ~30fps).
+//
+// Now each clip is (1) sampled down to ≤GRID_MAX_FRAMES frames, (2) decoded
+// ONCE into a small GRID_BMP-px ImageBitmap, (3) drawn to a per-card <canvas>
+// from one shared rAF. Per-frame cost is a GPU drawImage — no decode, no
+// layout. Decode is lazy (only when the card is actually on-screen) and
+// concurrency-limited so it never storms. Full-res frame-by-frame inspection
+// still lives in the scrub modal (separate <img>), so sampling here is fine.
+const GRID_MAX_FRAMES = 48;   // sampled frames per grid clip (motion preview)
+const GRID_BMP = 256;         // decoded bitmap edge in px (display is smaller)
+const GRID_FPS = 16;          // grid playback fps (scrub modal stays 24)
+
+let _flipbooks = [];
+let _flipRAF = null;
+function _flipLoop(now) {
+  for (let k = 0; k < _flipbooks.length; k++) {
+    const fb = _flipbooks[k];
+    if (!fb.active || !fb.bmps.length) continue;
+    const idx = Math.floor(now / fb.delay) % fb.bmps.length;
+    if (idx === fb.cur && fb.painted) continue;
+    const bmp = fb.bmps[idx];
+    if (!bmp) continue;                  // frame not decoded yet — try next tick
+    fb.cur = idx; fb.painted = true;
+    const ctx = fb.ctx, W = fb.canvas.width, H = fb.canvas.height;
+    ctx.clearRect(0, 0, W, H);
+    ctx.drawImage(bmp, 0, 0, W, H);
+  }
+  _flipRAF = requestAnimationFrame(_flipLoop);
+}
+function _ensureFlipLoop() { if (_flipRAF == null) _flipRAF = requestAnimationFrame(_flipLoop); }
+
+// Shared, concurrency-limited decode queue so first paint never floods the net.
+let _decQueue = [], _decActive = 0;
+const DEC_LIMIT = 6;
+function _pumpDecode() {
+  while (_decActive < DEC_LIMIT && _decQueue.length) {
+    const job = _decQueue.shift();
+    _decActive++;
+    job().catch(() => {}).finally(() => { _decActive--; _pumpDecode(); });
+  }
+}
+// Kick decode for every flipbook now sitting in a visible panel. Called by the
+// render funcs AFTER cards are attached, so offsetParent is meaningful here:
+// null only under a display:none ancestor (the inactive tab's panel). This is
+// what actually starts first paint — independent of IntersectionObserver,
+// which never reports "intersecting" while the browser tab is backgrounded.
+function _kickVisibleFlipbooks() {
+  for (const fb of _flipbooks) {
+    if (!fb.dead && fb.canvas.offsetParent !== null) { fb.active = true; fb.decode(); }
+  }
+}
+
+function startFlipbook(canvas, category, base, scenario, n) {
+  const cat = _cardCat(category);
+  const cfg = getTune(cat, base, scenario);
+  const fStart = cfg.frame_start != null ? cfg.frame_start : 1;
+  const fEnd   = cfg.frame_end   != null ? cfg.frame_end   : n;
+  const removed = new Set(Array.isArray(cfg.frames_removed) ? cfg.frames_removed : []);
+  // Effective frame list (range minus removed)
+  let seq = [];
+  for (let i = fStart; i <= fEnd; i++) if (!removed.has(i)) seq.push(i);
+  if (!seq.length) seq = [fStart];
+  // Sample down evenly — keeps the motion readable, slashes decode + memory.
+  if (seq.length > GRID_MAX_FRAMES) {
+    const step = seq.length / GRID_MAX_FRAMES, s = [];
+    for (let i = 0; i < GRID_MAX_FRAMES; i++) s.push(seq[Math.floor(i * step)]);
+    seq = s;
+  }
+  const path = `${spriteRoot(category, base)}/${category}/${base}/anims/${scenario}/`;
+  canvas.width = GRID_BMP; canvas.height = GRID_BMP;
+  const ctx = canvas.getContext('2d');
+  _applyCardTuning(canvas, category, base, scenario);
+  const fb = {
+    canvas, ctx, bmps: new Array(seq.length).fill(null),
+    delay: 1000 / GRID_FPS, cur: -1, painted: false,
+    active: false, decoded: false, dead: false,
+  };
+  _flipbooks.push(fb);
+  _ensureFlipLoop();
+
+  // Decode this clip's sampled frames into small bitmaps — once, lazily, the
+  // first time the card is actually visible.
+  function decodeAll() {
+    if (fb.decoded || fb.dead) return;
+    fb.decoded = true;
+    seq.forEach((frame, i) => _decQueue.push(async () => {
+      if (fb.dead) return;
+      const resp = await fetch(path + 'f' + frame + '.png');
+      const blob = await resp.blob();
+      const bmp = await createImageBitmap(blob, {
+        resizeWidth: GRID_BMP, resizeHeight: GRID_BMP, resizeQuality: 'medium',
+      });
+      if (fb.dead) { bmp.close && bmp.close(); return; }
+      fb.bmps[i] = bmp;
+      fb.painted = false;   // nudge the loop to repaint now that a frame landed
+    }));
+    _pumpDecode();
+  }
+
+  let io = null;
+  if ('IntersectionObserver' in window) {
+    io = new IntersectionObserver((entries) => {
+      entries.forEach(e => { fb.active = e.isIntersecting; if (e.isIntersecting) decodeAll(); });
+    }, { threshold: 0.15 });
+    io.observe(canvas);
+  } else {
+    fb.active = true; decodeAll();
+  }
+  // Expose the decoder so the panel can kick it AFTER the card is attached to
+  // the document — offsetParent is null while the card subtree is still
+  // detached (during makeXCard), so visibility can't be decided here. The
+  // render funcs call _kickVisibleFlipbooks() once the grid is populated.
+  fb.decode = decodeAll;
+
+  // Cleanup on grid re-render (pill/tab switch): stop, free bitmaps, unobserve.
+  _flipCleanups.push(() => {
+    fb.active = false; fb.dead = true;
+    const i = _flipbooks.indexOf(fb);
+    if (i >= 0) _flipbooks.splice(i, 1);
+    fb.bmps.forEach(b => b && b.close && b.close());
+    fb.bmps = [];
+    if (io) io.disconnect();
+  });
+}
+let _flipCleanups = [];
+function clearFlipbooks() {
+  _flipCleanups.forEach(fn => { try { fn(); } catch (_) {} });
+  _flipCleanups = [];
+  if (_flipbooks.length === 0 && _flipRAF != null) { cancelAnimationFrame(_flipRAF); _flipRAF = null; }
+}
+
+/* ===========================================================
+   Boot
+   =========================================================== */
+async function loadManifest() {
+  // Project-aware: active project's assets merged with the shared library.
+  const r = await fetch(`/api/atlas/manifest?project=${encodeURIComponent(ACTIVE_PROJECT)}&t=${Date.now()}`);
+  const d = await r.json();
+  manifest = d.manifest;
+  PROJECTS = d.projects || PROJECTS;
+  ACTIVE_PROJECT = d.project || ACTIVE_PROJECT;
+  // Build per-character URL base map (project sprites vs shared library).
+  CHAR_BASE = { pets: {}, monsters: {}, bosses: {} };
+  for (const cat of ['pets', 'monsters', 'bosses']) {
+    const chars = (manifest[cat] && manifest[cat].characters) || {};
+    for (const [id, c] of Object.entries(chars)) CHAR_BASE[cat][id] = c._base || '/static/sprites';
+  }
+}
+async function loadMonsters() {
+  // Monsters come from the active project's (merged) manifest — sprites only.
+  const chars = (manifest.monsters && manifest.monsters.characters) || {};
+  monsters = Object.entries(chars).map(([id, c]) => ({
+    id, name: id, family: null, rarity: null,
+    description: c._shared ? '공유 라이브러리' : '',
+    encounter: {}, passive: {},
+    sprite: { animations: c.animations || {}, statics: c.statics || [] },
+    _shared: !!c._shared
+  }));
+}
+async function loadTuning() {
+  try {
+    const r = await fetch('/api/sprite-tuning?t=' + Date.now());
+    if (r.ok) tuning = await r.json();
+  } catch (_) {}
+}
+
+(async () => {
+  // Load the project registry first so we open the last-active project.
+  try {
+    const pr = await (await fetch('/api/projects?t=' + Date.now())).json();
+    PROJECTS = pr.projects || [];
+    ACTIVE_PROJECT = pr.active || 'demo';
+  } catch (_) {}
+  await loadManifest();                          // builds CHAR_BASE first…
+  await Promise.all([loadMonsters(), loadTuning()]);   // …monsters read the manifest
+  wireTune();
+  wirePreviewBg();   // apply saved preview backdrop before first render
+  wireInpaint();     // wire the Flux masked-inpaint panel
+  wireMatte();       // wire the re-matte (background removal) panel
+  wireCoverflow();   // wire the Cover Flow frame browser
+  renderProjectBar();   // populate the project dropdown
+  renderPetPills();     // build pet pills from the active project's manifest
+  // Counts in nav tabs
+  const pets = manifest.pets?.characters || {};
+  document.getElementById('cnt-pet').textContent     = Object.keys(pets).length;
+  document.getElementById('cnt-monster').textContent = monsters.length;
+  document.getElementById('cnt-boss').textContent    = Object.keys(manifest.bosses?.characters || {}).length;
+  document.getElementById('stat-monster').textContent =
+    `${monsters.length}종 · 스프라이트 보유 ${monsters.filter(m => Object.keys(m.sprite.animations).length).length}종`;
+  renderPet(currentStage);
+  // NOTE: do NOT renderMonster() here. clearFlipbooks() is global, so building
+  // the (hidden) monster panel on boot would wipe the pet panel's flipbooks we
+  // just created and leave the visible pets frozen on frame 1. The monster
+  // panel renders lazily on its first tab click (see the nav handler).
+})();
+</script>
+</body>
+</html>

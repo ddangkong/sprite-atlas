@@ -1,0 +1,8 @@
+# Sprite Atlas — core (everything except the optional AI tools)
+fastapi>=0.110
+uvicorn>=0.27
+pillow>=10.0
+
+# Optional: AI background removal ("누끼" / matte). Install if you want it:
+#   pip install transparent-background
+# Optional: Flux masked inpaint needs a local ComfyUI (set COMFY_URL), not a pip dep.

@@ -1,0 +1,29 @@
+{
+  "pets": {
+    "flat": false,
+    "characters": {
+      "star": {
+        "statics": [],
+        "animations": {
+          "spin": 8
+        }
+      }
+    }
+  },
+  "monsters": {
+    "flat": false,
+    "characters": {}
+  },
+  "bosses": {
+    "flat": false,
+    "characters": {}
+  },
+  "baits": {
+    "flat": true,
+    "files": []
+  },
+  "locations": {
+    "flat": true,
+    "files": []
+  }
+}
