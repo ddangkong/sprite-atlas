@@ -756,8 +756,10 @@
     <select id="projectSelect" class="proj-select"></select>
     <button class="pill proj-act" id="newProjectBtn" type="button">+ 새 프로젝트</button>
     <button class="pill proj-act" id="rebuildBtn" type="button" title="이 프로젝트의 스프라이트 폴더를 다시 스캔해 매니페스트 갱신">↻ 새로고침</button>
+    <button class="pill proj-act" id="autoMatteBtn" type="button" title="폴더에 새로 추가된 스프라이트를 인식(새로고침)하고, 배경이 남아있는 프레임만 자동으로 누끼(배경 제거)까지 처리. 프롬프트 불필요 · 흰 배경 기준 · 이미 누끼된 건 건너뜀">📁 동기화+누끼</button>
     <button class="pill proj-act" id="importFolderBtn" type="button" title="내 컴퓨터의 폴더를 골라 그 안의 이미지(png·jpg·gif·webp·bmp)를 애니메이션으로 미리보기 (저장 안 함, 비파괴)">📂 폴더 불러오기</button>
     <button class="pill proj-act" id="sliceBtn" type="button" title="스프라이트 시트 1장을 격자로 잘라 애니메이션으로 만들고 프로젝트에 저장">✂ 시트 자르기</button>
+    <button class="pill proj-act" id="flfBtn" type="button" title="이미지 2장(시작·끝)을 넣으면 그 사이를 AI가 보간해 애니메이션 프레임으로 만들고 누끼까지 처리해 새 액션으로 저장 (ComfyUI 필요)">🎞 모션 생성</button>
     <input type="file" id="sliceInput" accept="image/*" hidden>
     <button class="pill proj-act" id="importSaveBtn" type="button" hidden title="불러온 폴더를 프로젝트에 영구 저장 (하위폴더=액션)">💾 프로젝트에 저장</button>
     <button class="pill proj-act" id="importBackBtn" type="button" hidden title="원래 프로젝트 폴더 보기로 되돌리기">↩ 되돌리기</button>
@@ -854,6 +856,51 @@
           <span id="sliceStatus" style="margin-right:auto; font-size:12px; opacity:.7;"></span>
           <button class="pill" id="sliceReload" type="button">🖼 다른 시트</button>
           <button class="pill" id="sliceSaveBtn" type="button">💾 프로젝트에 저장</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- =================== FLF2V MOTION MODAL =================== -->
+  <div class="tune-overlay" id="flfOverlay" hidden>
+    <div class="tune-card" style="max-width:760px; width:min(760px,96vw);">
+      <div class="tune-head">
+        <span class="tune-title">🎞 모션 생성 — 이미지 2장 사이를 애니메이션으로</span>
+        <button class="tune-close" id="flfClose" type="button" aria-label="닫기">×</button>
+      </div>
+      <div class="tune-body" style="display:block; max-height:80vh; overflow:auto;">
+        <div id="flfComfy" style="font-size:12px; margin-bottom:8px;">상태 확인 중…</div>
+        <div style="display:flex; gap:16px; flex-wrap:wrap; align-items:flex-start;">
+          <div style="flex:0 0 auto;">
+            <div class="col-title">시작 프레임</div>
+            <div class="sprite-slot solo" id="flfSlotA" style="width:150px; height:150px; background:#fff; border-radius:8px; cursor:pointer;">
+              <img id="flfImgA" alt="(클릭해서 이미지 선택)" style="width:100%; height:100%; object-fit:contain;">
+            </div>
+            <input type="file" id="flfFileA" accept="image/*" hidden>
+          </div>
+          <div style="flex:0 0 auto;">
+            <div class="col-title">끝 프레임</div>
+            <div class="sprite-slot solo" id="flfSlotB" style="width:150px; height:150px; background:#fff; border-radius:8px; cursor:pointer;">
+              <img id="flfImgB" alt="(클릭해서 이미지 선택)" style="width:100%; height:100%; object-fit:contain;">
+            </div>
+            <input type="file" id="flfFileB" accept="image/*" hidden>
+          </div>
+          <div style="flex:1; min-width:240px;">
+            <div class="col-title">설정</div>
+            <textarea id="flfPrompt" rows="2" style="width:100%; box-sizing:border-box;" placeholder="동작 설명 (예: the warrior swings the katana down)"></textarea>
+            <div class="tune-row" style="margin-top:6px;"><label>캐릭터</label><input id="flfChar" value="sephiroth" style="width:120px;"><label style="margin-left:8px;">액션</label><input id="flfAction" value="motion1" style="width:110px;"></div>
+            <div class="tune-row"><label>길이(프레임) <span class="tune-val" id="flfLenV">25</span></label><input type="range" id="flfLen" min="9" max="49" step="4" value="25"></div>
+            <div class="tune-row"><label>생성해상도</label>
+              <select id="flfRes" class="proj-select"><option value="640">640</option><option value="768">768</option><option value="896" selected>896</option><option value="1024">1024</option></select>
+              <label style="margin-left:6px;">스프라이트</label>
+              <select id="flfSize" class="proj-select"><option value="256">256</option><option value="512" selected>512</option><option value="768">768</option></select>
+            </div>
+            <div class="tune-row"><label>시드</label><input type="number" id="flfSeed" value="0" style="width:90px;"></div>
+          </div>
+        </div>
+        <div style="display:flex; gap:8px; justify-content:flex-end; align-items:center; margin-top:14px;">
+          <span id="flfStatus" style="margin-right:auto; font-size:12px; opacity:.8;"></span>
+          <button class="pill" id="flfGenBtn" type="button" disabled>▶ 생성</button>
         </div>
       </div>
     </div>
@@ -1023,7 +1070,7 @@
             <span class="scrub-frame">프레임 <b id="cfNum">1</b> / <span id="cfTotal">145</span></span>
             <button class="scrub-btn" id="cfNext" type="button" title="다음">▶</button>
             <button class="scrub-btn play" id="cfPlay" type="button" title="재생/정지">▶ 재생</button>
-            <button class="scrub-btn remove" id="cfExclude" type="button">✕ 이 프레임 제외</button>
+            <button class="scrub-btn remove" id="cfExclude" type="button" title="클릭: 이 프레임만 제외 · Shift+클릭: 직전 제외 프레임부터 여기까지 한 번에 제외">✕ 이 프레임 제외</button>
             <span class="scrub-stat">제외 <b id="tuneRemovedCnt">0</b>개</span>
           </div>
           <div class="inpaint-controls">
@@ -1143,6 +1190,7 @@ function openTune(category, base, action, frameCount) {
   document.getElementById('tuneStartVal').textContent = start;
   document.getElementById('tuneEndVal').textContent   = end;
   _tuneRemoved = new Set(Array.isArray(t.frames_removed) ? t.frames_removed : []);
+  _excludeAnchor = null;   // Shift 범위 제외 기준점 초기화
   // Edge-fade state from saved config
   const ef = (t.edge_fade && typeof t.edge_fade === 'object') ? t.edge_fade : {};
   _tuneFade = { type: ef.type || 'none', amount: (ef.amount != null ? ef.amount : 30) };
@@ -1408,8 +1456,16 @@ function _cfUpdExcludeBtn() {
   btn.classList.toggle('is-removed', rm);
   btn.textContent = rm ? '↺ 이 프레임 복원' : '✕ 이 프레임 제외';
 }
-function _cfExcludeToggle() {
-  if (_tuneRemoved.has(_cfCenter)) _tuneRemoved.delete(_cfCenter); else _tuneRemoved.add(_cfCenter);
+let _excludeAnchor = null;   // 마지막으로 토글한 프레임 (Shift 범위 제외 기준점)
+function _cfExcludeToggle(shiftKey) {
+  if (shiftKey && _excludeAnchor != null && _excludeAnchor !== _cfCenter) {
+    // Shift+클릭: 직전에 제외한 프레임(anchor)부터 현재 프레임까지 한 번에 제외
+    const lo = Math.min(_excludeAnchor, _cfCenter), hi = Math.max(_excludeAnchor, _cfCenter);
+    for (let f = lo; f <= hi; f++) _tuneRemoved.add(f);
+  } else {
+    if (_tuneRemoved.has(_cfCenter)) _tuneRemoved.delete(_cfCenter); else _tuneRemoved.add(_cfCenter);
+  }
+  _excludeAnchor = _cfCenter;
   _updRemovedCount(); _cfRender();
 }
 function _cfStopPlay() {
@@ -1435,7 +1491,7 @@ function wireCoverflow() {
   byId('cfPrev')?.addEventListener('click', () => { _cfStopPlay(); _cfGo(-1); });
   byId('cfNext')?.addEventListener('click', () => { _cfStopPlay(); _cfGo(1); });
   byId('cfPlay')?.addEventListener('click', () => { _cfPlayTimer ? _cfStopPlay() : _cfStartPlay(); });
-  byId('cfExclude')?.addEventListener('click', _cfExcludeToggle);
+  byId('cfExclude')?.addEventListener('click', (e) => _cfExcludeToggle(e.shiftKey));
   byId('cfSlider')?.addEventListener('input', (e) => { _cfStopPlay(); _cfSetCenter(+e.target.value); });
   const cf = byId('coverflow');
   if (cf) {
@@ -1882,7 +1938,9 @@ function wireTune() {
       const ctxCat = tuneCtx.category;
       setTimeout(() => {
         btn.disabled = false; btn.textContent = '저장';
-        closeTune();
+        // 저장 후에도 팝업 유지 (closeTune 안 함) — 계속 프레임 제거 가능, 초기화로 되돌림.
+        // 제외 프레임은 frames_removed로 저장돼 미리보기/카드에 반영됨.
+        _cfRender();
         if (ctxCat === 'pet') renderPet(currentStage);
         else if (ctxCat === 'monster') renderMonster();
       }, 700);
@@ -2436,6 +2494,112 @@ document.getElementById('importSaveBtn').addEventListener('click', saveImportedT
   $('sliceTrim').addEventListener('change', recompute);
   $('sliceFps').addEventListener('input', () => { $('sliceFpsV').textContent = $('sliceFps').value + ' fps'; startAnim(); });
   $('sliceSaveBtn').addEventListener('click', save);
+})();
+
+// ===========================================================
+//  FLF2V motion — two images (start+end) -> AI-interpolated, matted frames
+//  -> saved as a new action. Backend: /api/flf/* (needs ComfyUI :8188).
+// ===========================================================
+(function () {
+  const $ = id => document.getElementById(id);
+  let imgA = null, imgB = null;   // data-URLs
+  function pick(fileId, imgId, set) {
+    $(fileId).addEventListener('change', e => {
+      const f = e.target.files[0]; e.target.value = '';
+      if (!f) return;
+      const rd = new FileReader();
+      rd.onload = () => { set(rd.result); $(imgId).src = rd.result; };
+      rd.readAsDataURL(f);
+    });
+  }
+  pick('flfFileA', 'flfImgA', v => imgA = v);
+  pick('flfFileB', 'flfImgB', v => imgB = v);
+  function bindSlot(slot, file) { const s = $(slot); if (s) s.addEventListener('click', () => $(file).click()); }
+  bindSlot('flfSlotA', 'flfFileA'); bindSlot('flfSlotB', 'flfFileB');
+  const lr = $('flfLen'); if (lr) lr.addEventListener('input', () => $('flfLenV').textContent = lr.value);
+
+  async function checkComfy() {
+    const el = $('flfComfy'), btn = $('flfGenBtn');
+    try {
+      const j = await (await fetch('/api/flf/status')).json();
+      if (j.running) { el.textContent = '🟢 ComfyUI 연결됨 (:8188)'; el.style.color = '#2a8a4a'; btn.disabled = false; }
+      else { el.textContent = '🔴 ComfyUI(:8188)가 꺼져 있습니다 — 모델 서버를 먼저 켜세요'; el.style.color = '#c0392b'; btn.disabled = true; }
+    } catch (_) { el.textContent = '상태 확인 실패'; el.style.color = '#c0392b'; btn.disabled = true; }
+  }
+  function openFlf() { $('flfOverlay').hidden = false; checkComfy(); }
+  function closeFlf() { $('flfOverlay').hidden = true; }
+  const ob = $('flfBtn'); if (ob) ob.addEventListener('click', openFlf);
+  const cb = $('flfClose'); if (cb) cb.addEventListener('click', closeFlf);
+
+  function poll(id, proj, char, action) {
+    const st = $('flfStatus'), btn = $('flfGenBtn');
+    const t = setInterval(async () => {
+      let j; try { j = await (await fetch('/api/flf/job/' + id)).json(); } catch (_) { return; }
+      if (j.state === 'running' && j.stage === 'generating') st.textContent = '🎨 모션 생성 중… (ComfyUI, 보통 1–2분)';
+      else if (j.stage === 'matting') st.textContent = '✂ 누끼 처리 ' + j.done + '/' + j.total;
+      if (j.state === 'done') {
+        clearInterval(t); btn.disabled = false;
+        st.textContent = '✅ 완료 — ' + char + '/' + action + ' (' + j.total + ' 프레임)';
+        try { await switchProject(proj); currentStage = char; renderPetPills(); renderPet(char); } catch (_) {}
+      } else if (j.state === 'error') {
+        clearInterval(t); btn.disabled = false;
+        st.textContent = '❌ ' + ((j.errors && j.errors[0]) || '생성 실패');
+      }
+    }, 1200);
+  }
+  async function gen() {
+    if (!imgA || !imgB) { alert('시작·끝 이미지 2장을 모두 선택하세요.'); return; }
+    const proj = (ACTIVE_PROJECT && ACTIVE_PROJECT !== 'shared') ? ACTIVE_PROJECT : (PROJECTS[0] && PROJECTS[0].id);
+    if (!proj) { alert('프로젝트가 없습니다. 먼저 "+ 새 프로젝트"로 만드세요.'); return; }
+    const char = slugifyProjectId(($('flfChar').value || '').trim());
+    const action = slugifyProjectId(($('flfAction').value || '').trim());
+    if (!char || !action) { alert('캐릭터/액션 이름이 필요합니다 (영문소문자·숫자).'); return; }
+    const btn = $('flfGenBtn'), st = $('flfStatus');
+    btn.disabled = true; st.textContent = '⏳ 생성 요청 중…';
+    try {
+      const r = await fetch('/api/flf/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project: proj, category: 'pets', char, action,
+          start: imgA, end: imgB, prompt: ($('flfPrompt').value || ''),
+          length: +$('flfLen').value, res: +$('flfRes').value, size: +$('flfSize').value, seed: +$('flfSeed').value }) });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.detail || '요청 실패');
+      poll(j.job_id, proj, char, action);
+    } catch (e) { st.textContent = '오류: ' + e.message; btn.disabled = false; }
+  }
+  const gb = $('flfGenBtn'); if (gb) gb.addEventListener('click', gen);
+})();
+
+// ===========================================================
+//  동기화 + 누끼 — rebuild manifest (pick up new files) then prompt-free
+//  auto-matte every frame that still has a background. Backend: /api/matte/auto.
+// ===========================================================
+(function () {
+  const $ = id => document.getElementById(id);
+  const btn = $('autoMatteBtn'); if (!btn) return;
+  btn.addEventListener('click', async () => {
+    const proj = ACTIVE_PROJECT;
+    if (!proj || proj === 'shared') { alert('프로젝트를 먼저 선택하세요.'); return; }
+    const t0 = btn.textContent; btn.disabled = true;
+    try {
+      btn.textContent = '↻ 새로고침…';
+      await fetch('/api/projects/rebuild', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: proj }) });
+      btn.textContent = '✂ 누끼 시작…';
+      const r = await fetch('/api/matte/auto', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: proj }) });
+      const j = await r.json();
+      if (!r.ok || !j.job_id) throw new Error(j.detail || '누끼 요청 실패');
+      const fin = await new Promise(res => {
+        const tm = setInterval(async () => {
+          let s; try { s = await (await fetch('/api/matte/auto/job/' + j.job_id)).json(); } catch (_) { return; }
+          if (s.total) btn.textContent = '✂ 누끼 ' + s.done + '/' + s.total;
+          if (s.state === 'done' || s.state === 'error') { clearInterval(tm); res(s); }
+        }, 800);
+      });
+      await reloadProject();
+      if (fin.state === 'error') alert('누끼 오류: ' + (fin.error || ''));
+      else alert('✅ 동기화+누끼 완료 — 새 프레임 ' + (fin.matted || 0) + '개 누끼, ' + (fin.skipped || 0) + '개 건너뜀(이미 처리됨)');
+    } catch (e) { alert('오류: ' + e.message); }
+    finally { btn.disabled = false; btn.textContent = t0; }
+  });
 })();
 
 // ===========================================================
