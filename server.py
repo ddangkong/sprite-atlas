@@ -64,6 +64,29 @@ for d in (STATIC, DATA, AI_DIR, TOOLS):
     d.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(title="Sprite Atlas")
+
+
+# Projects whose sprites live OUTSIDE static/ carry an absolute "path" in the
+# registry. Mount each at its /static/<base> URL *before* the catch-all /static
+# mount, so their frames resolve to the real folder with no copy. (StaticFiles
+# refuses to serve a junction/symlink whose real path escapes the mount root,
+# which is why an in-tree junction 404s — an explicit mount is the fix.)
+def _mount_external_projects() -> None:
+    try:
+        reg = json.loads(PROJECTS_FILE.read_text(encoding="utf-8")) if PROJECTS_FILE.exists() else {}
+    except Exception:
+        return
+    for p in reg.get("projects", []):
+        ext = p.get("path")
+        if ext and Path(ext).is_dir():
+            try:
+                app.mount(f"/static/{p['base']}", StaticFiles(directory=str(ext)),
+                          name=f"ext_{p.get('id', 'x')}")
+            except Exception:
+                pass
+
+
+_mount_external_projects()
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 
@@ -120,8 +143,20 @@ def _active_base(reg: dict | None = None) -> str:
     return p["base"] if p else "projects/demo/sprites"
 
 
+def _real_base_dir(base: str) -> Path:
+    """Resolve a project base to its real sprites dir. External-path projects
+    (an absolute "path" in the registry) live outside static/."""
+    try:
+        for p in _load_projects().get("projects", []):
+            if p.get("base") == base and p.get("path") and Path(p["path"]).is_dir():
+                return Path(p["path"])
+    except Exception:
+        pass
+    return STATIC / base
+
+
 def _read_manifest_for_base(base: str) -> dict:
-    mp = STATIC / base / "manifest.json"
+    mp = _real_base_dir(base) / "manifest.json"
     if mp.exists():
         try:
             return json.loads(mp.read_text(encoding="utf-8"))
@@ -657,6 +692,99 @@ def matte_job(job_id: str):
             j.update(json.loads(sp.read_text(encoding="utf-8")))
         except Exception:
             pass
+    return j
+
+
+# ---------------------------------------------------------------------------
+# FLF2V motion — two images (start + end) -> N matted frames -> a new action.
+# Needs ComfyUI (:8188) with the Wan 2.2 i2v + lightx2v models. 503 if down.
+# ---------------------------------------------------------------------------
+_flf_jobs: dict[str, dict] = {}
+
+
+def _flf_mod():
+    import flf_motion as _fm
+    _fm.COMFY_URL = COMFY_URL
+    return _fm
+
+
+class FlfReq(BaseModel):
+    project: str
+    category: str = "pets"
+    char: str
+    action: str
+    start: str            # data-url PNG (start frame)
+    end: str              # data-url PNG (end frame)
+    prompt: str = ""
+    neg: str = ""
+    length: int = 25
+    size: int = 512       # output sprite size (px, square)
+    res: int = 896        # generation resolution (px, square)
+    seed: int = 0
+    steps: int = 4
+    shift: float = 8.0
+
+
+@app.get("/api/flf/status")
+def flf_status():
+    try:
+        return {"running": _flf_mod().comfy_up()}
+    except Exception as e:
+        return {"running": False, "error": str(e)}
+
+
+@app.post("/api/flf/generate")
+def flf_generate(req: FlfReq):
+    fm = _flf_mod()
+    if not fm.comfy_up():
+        raise HTTPException(503, f"ComfyUI not running on {COMFY_URL}")
+    reg = _load_projects()
+    p = _project_by_id(reg, req.project)
+    if not p:
+        raise HTTPException(404, f"unknown project: {req.project}")
+    cat = _CAT_PLURAL.get(req.category, req.category if req.category in CHAR_CATEGORIES else "pets")
+    char, action = _safe_seg(req.char), _safe_seg(req.action)
+    if not char or not action:
+        raise HTTPException(400, "char and action required (a-z 0-9 _ -)")
+    try:
+        start_png = _decode_dataurl_png(req.start)
+        end_png = _decode_dataurl_png(req.end)
+    except Exception as e:
+        raise HTTPException(400, f"bad image data: {e}")
+    dest = STATIC / p["base"] / cat / char / "anims" / action
+    job_id = _uuid.uuid4().hex[:12]
+    j = {"state": "running", "stage": "generating", "done": 0,
+         "total": int(req.length), "errors": []}
+    _flf_jobs[job_id] = j
+
+    def _run():
+        try:
+            frames = fm.generate(start_png, end_png, req.prompt, req.neg,
+                                 int(req.length), int(req.res), int(req.res),
+                                 int(req.seed), int(req.steps), float(req.shift))
+            j["stage"] = "matting"; j["total"] = len(frames)
+            dest.mkdir(parents=True, exist_ok=True)
+            for old in dest.glob("f*.png"):
+                try: old.unlink()
+                except Exception: pass
+            for i, fr in enumerate(frames, 1):
+                fm.matte(fr, size=int(req.size)).save(dest / f"f{i}.png")
+                j["done"] = i
+            _rebuild_manifest_for_base(p["base"])
+            j["state"] = "done"
+            j["path"] = f"{p['base']}/{cat}/{char}/anims/{action}"
+        except Exception as e:
+            j["errors"].append(str(e)); j["state"] = "error"
+
+    threading.Thread(target=_run, daemon=True).start()
+    return {"job_id": job_id, "total": int(req.length)}
+
+
+@app.get("/api/flf/job/{job_id}")
+def flf_job(job_id: str):
+    j = _flf_jobs.get(job_id)
+    if not j:
+        raise HTTPException(404, "no such job")
     return j
 
 
