@@ -788,6 +788,48 @@ def flf_job(job_id: str):
     return j
 
 
+# ---------------------------------------------------------------------------
+# Auto-matte — prompt-free background removal for a whole project, then rebuild.
+# Powers the "동기화 + 누끼" toolbar button (no ComfyUI / no model / no prompt).
+# ---------------------------------------------------------------------------
+_automatte_jobs: dict[str, dict] = {}
+
+
+@app.post("/api/matte/auto")
+def matte_auto(req: ProjectIdReq):
+    reg = _load_projects()
+    p = _project_by_id(reg, req.id)
+    if not p:
+        raise HTTPException(404, f"unknown project: {req.id}")
+    base = p["base"]
+    base_dir = str(STATIC / base)
+    job_id = _uuid.uuid4().hex[:12]
+    j = {"state": "running", "done": 0, "total": 0, "matted": 0, "skipped": 0}
+    _automatte_jobs[job_id] = j
+
+    def _run():
+        try:
+            import auto_matte as am
+            def cb(done, total, matted, skipped):
+                j["done"], j["total"], j["matted"], j["skipped"] = done, total, matted, skipped
+            am.matte_base(base_dir, on_progress=cb)
+            _rebuild_manifest_for_base(base)
+            j["state"] = "done"
+        except Exception as e:
+            j["error"] = str(e); j["state"] = "error"
+
+    threading.Thread(target=_run, daemon=True).start()
+    return {"job_id": job_id}
+
+
+@app.get("/api/matte/auto/job/{job_id}")
+def matte_auto_job(job_id: str):
+    j = _automatte_jobs.get(job_id)
+    if not j:
+        raise HTTPException(404, "no such job")
+    return j
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "8000"))
     print(f"Sprite Atlas → http://127.0.0.1:{port}/  (Ctrl+C to quit)")

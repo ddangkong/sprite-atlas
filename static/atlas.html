@@ -756,6 +756,7 @@
     <select id="projectSelect" class="proj-select"></select>
     <button class="pill proj-act" id="newProjectBtn" type="button">+ 새 프로젝트</button>
     <button class="pill proj-act" id="rebuildBtn" type="button" title="이 프로젝트의 스프라이트 폴더를 다시 스캔해 매니페스트 갱신">↻ 새로고침</button>
+    <button class="pill proj-act" id="autoMatteBtn" type="button" title="폴더에 새로 추가된 스프라이트를 인식(새로고침)하고, 배경이 남아있는 프레임만 자동으로 누끼(배경 제거)까지 처리. 프롬프트 불필요 · 흰 배경 기준 · 이미 누끼된 건 건너뜀">📁 동기화+누끼</button>
     <button class="pill proj-act" id="importFolderBtn" type="button" title="내 컴퓨터의 폴더를 골라 그 안의 이미지(png·jpg·gif·webp·bmp)를 애니메이션으로 미리보기 (저장 안 함, 비파괴)">📂 폴더 불러오기</button>
     <button class="pill proj-act" id="sliceBtn" type="button" title="스프라이트 시트 1장을 격자로 잘라 애니메이션으로 만들고 프로젝트에 저장">✂ 시트 자르기</button>
     <button class="pill proj-act" id="flfBtn" type="button" title="이미지 2장(시작·끝)을 넣으면 그 사이를 AI가 보간해 애니메이션 프레임으로 만들고 누끼까지 처리해 새 액션으로 저장 (ComfyUI 필요)">🎞 모션 생성</button>
@@ -2566,6 +2567,39 @@ document.getElementById('importSaveBtn').addEventListener('click', saveImportedT
     } catch (e) { st.textContent = '오류: ' + e.message; btn.disabled = false; }
   }
   const gb = $('flfGenBtn'); if (gb) gb.addEventListener('click', gen);
+})();
+
+// ===========================================================
+//  동기화 + 누끼 — rebuild manifest (pick up new files) then prompt-free
+//  auto-matte every frame that still has a background. Backend: /api/matte/auto.
+// ===========================================================
+(function () {
+  const $ = id => document.getElementById(id);
+  const btn = $('autoMatteBtn'); if (!btn) return;
+  btn.addEventListener('click', async () => {
+    const proj = ACTIVE_PROJECT;
+    if (!proj || proj === 'shared') { alert('프로젝트를 먼저 선택하세요.'); return; }
+    const t0 = btn.textContent; btn.disabled = true;
+    try {
+      btn.textContent = '↻ 새로고침…';
+      await fetch('/api/projects/rebuild', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: proj }) });
+      btn.textContent = '✂ 누끼 시작…';
+      const r = await fetch('/api/matte/auto', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: proj }) });
+      const j = await r.json();
+      if (!r.ok || !j.job_id) throw new Error(j.detail || '누끼 요청 실패');
+      const fin = await new Promise(res => {
+        const tm = setInterval(async () => {
+          let s; try { s = await (await fetch('/api/matte/auto/job/' + j.job_id)).json(); } catch (_) { return; }
+          if (s.total) btn.textContent = '✂ 누끼 ' + s.done + '/' + s.total;
+          if (s.state === 'done' || s.state === 'error') { clearInterval(tm); res(s); }
+        }, 800);
+      });
+      await reloadProject();
+      if (fin.state === 'error') alert('누끼 오류: ' + (fin.error || ''));
+      else alert('✅ 동기화+누끼 완료 — 새 프레임 ' + (fin.matted || 0) + '개 누끼, ' + (fin.skipped || 0) + '개 건너뜀(이미 처리됨)');
+    } catch (e) { alert('오류: ' + e.message); }
+    finally { btn.disabled = false; btn.textContent = t0; }
+  });
 })();
 
 // ===========================================================
